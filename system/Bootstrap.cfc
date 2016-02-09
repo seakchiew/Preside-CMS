@@ -95,9 +95,11 @@ component {
 		, string assetsPath     = _getApplicationRoot() & "/assets"
 		, string logsPath       = _getApplicationRoot() & "/logs"
 	) {
-		this.mappings[ "/preside" ] = ExpandPath( "/preside" );
-		this.mappings[ "/coldbox" ] = ExpandPath( "/preside/system/externals/coldbox-standalone-3.8.2/coldbox" );
-		this.mappings[ "/sticker" ] = ExpandPath( "/preside/system/externals/sticker" );
+		var presideroot = _getPresideRoot();
+
+		this.mappings[ "/preside" ] = presideroot;
+		this.mappings[ "/coldbox" ] = presideroot & "/system/externals/coldbox-standalone-3.8.2/coldbox";
+		this.mappings[ "/sticker" ] = presideroot & "/system/externals/sticker";
 
 		this.mappings[ arguments.appMapping     ] = arguments.appPath;
 		this.mappings[ arguments.assetsMapping  ] = arguments.assetsPath;
@@ -113,12 +115,11 @@ component {
 			, logsMapping    = arguments.logsMapping
 		};
 
-		_setupCustomTagPath();
+		_setupCustomTagPath( presideroot );
 	}
 
-	private void function _setupCustomTagPath() {
-		var thisDir = GetDirectoryFromPath( GetCurrentTemplatePath() );
-		var tagsDir = ReReplace( thisDir, "/$", "" ) & "/customtags";
+	private void function _setupCustomTagPath( required string presideroot ) {
+		var tagsDir = arguments.presideroot & "/system/customtags";
 
 		this.customTagPaths = ListAppend( this.customTagPaths ?: "", tagsDir );
 	}
@@ -368,6 +369,14 @@ component {
 				resp.addHeader( "Set-Cookie", cooky );
 			}
 		}
+	}
+
+	private string function _getPresideRoot() {
+		var trace        = CallStackGet();
+		var thisFilePath = trace[ 1 ].template;
+		var dir          = GetDirectoryFromPath( thisFilePath );
+
+		return ReReplace( dir, "/system/?$", "" );
 	}
 
 	private string function _getApplicationRoot() {
