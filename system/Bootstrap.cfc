@@ -40,6 +40,11 @@ component {
 		_ensureCookiesAreHttpOnlyAndSecureWhenNeeded();
 	}
 
+	public void function onAbort() {
+		_invalidateSessionIfNotUsed();
+		_ensureCookiesAreHttpOnlyAndSecureWhenNeeded();
+	}
+
 	public boolean function onRequest() output=true {
 
 		// ensure all rquests go through coldbox and requested templates cannot be included directly
@@ -56,6 +61,8 @@ component {
 		if ( StructKeyExists( arguments, "cbBootstrap" ) ) {
 			application.cbBootstrap.onSessionStart();
 		}
+
+		_preventSessionFixation();
 	}
 
 	public void function onSessionEnd( required struct sessionScope, required struct appScope ) {
@@ -289,6 +296,11 @@ component {
 		new preside.system.services.maintenanceMode.MaintenanceModeService().showMaintenancePageIfActive();
 	}
 
+	private void function _preventSessionFixation() {
+		_removeSessionCookies();
+		SessionRotate();
+	}
+
 	private void function _invalidateSessionIfNotUsed() {
 		var applicationSettings  = getApplicationSettings();
 		var sessionIsUsed        = false;
@@ -350,8 +362,8 @@ component {
 
 		var resp              = pc.getResponse();
 		var allCookies        = resp.getHeaders( "Set-Cookie" );
-		var httpRegex         = "(^|;)HTTPOnly(;|$)";
-		var secureRegex       = "(^|;)Secure(;|$)";
+		var httpRegex         = "(^|;|\s)HttpOnly(;|$)";
+		var secureRegex       = "(^|;|\s)Secure(;|$)";
 		var cleanedCookies    = [];
 		var anyCookiesChanged = false;
 		var site              = cbController.getRequestContext().getSite();
@@ -360,7 +372,7 @@ component {
 		for( var i=1; i <= ArrayLen( allCookies ); i++ ) {
 			var cooky = allCookies[ i ];
 			if ( !ReFindNoCase( httpRegex, cooky ) ) {
-				cooky = ListAppend( cooky, "HTTPOnly", ";" );
+				cooky = ListAppend( cooky, "HttpOnly", ";" );
 				anyCookiesChanged = true;
 			}
 
