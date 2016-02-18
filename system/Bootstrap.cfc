@@ -37,12 +37,12 @@ component {
 
 	public void function onRequestEnd() {
 		_invalidateSessionIfNotUsed();
-		_ensureCookiesAreHttpOnlyAndSecureWhenNeeded();
+		_cleanupCookies();
 	}
 
 	public void function onAbort() {
 		_invalidateSessionIfNotUsed();
-		_ensureCookiesAreHttpOnlyAndSecureWhenNeeded();
+		_cleanupCookies();
 	}
 
 	public boolean function onRequest() output=true {
@@ -297,7 +297,6 @@ component {
 	}
 
 	private void function _preventSessionFixation() {
-		_removeSessionCookies();
 		SessionRotate();
 	}
 
@@ -351,7 +350,7 @@ component {
 		}
 	}
 
-	private void function _ensureCookiesAreHttpOnlyAndSecureWhenNeeded() {
+	private void function _cleanupCookies() {
 		var pc                = getPageContext();
 		var cbController      = _getColdboxController();
 
@@ -384,12 +383,33 @@ component {
 			cleanedCookies.append( cooky );
 		}
 
+		anyCookiesChanged = _clearoutDuplicateCookies( cleanedCookies ) || anyCookiesChanged;
+
 		if ( anyCookiesChanged ) {
 			pc.setHeader( "Set-Cookie", NullValue() );
 			for( var cooky in cleanedCookies ) {
 				resp.addHeader( "Set-Cookie", cooky );
 			}
 		}
+	}
+
+	private boolean function _clearoutDuplicateCookies( required array cookieSet ) {
+		var existingCookies = {};
+		var anyCleared      = false;
+
+		for( var i=arguments.cookieSet.len(); i>0; i-- ) {
+			var cookieName = ListFirst( arguments.cookieSet[ i ], "=" );
+
+			if ( existingCookies.keyExists( cookieName ) ) {
+				arguments.cookieSet.deleteAt( i );
+				anyCleared = true;
+				continue;
+			}
+
+			existingCookies[ cookieName ] = 0;
+		}
+
+		return anyCleared;
 	}
 
 	private string function _getPresideRoot() {
