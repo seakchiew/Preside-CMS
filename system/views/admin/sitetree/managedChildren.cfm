@@ -1,8 +1,10 @@
 <cfscript>
-	pageType       = rc.pageType ?: "";
-	parentId       = rc.parent   ?: "";
-	canAddChildren = prc.canAddChildren ?: false;
-	gridFields     = prc.gridFields   ?: [];
+	pageType        = rc.pageType         ?: "";
+	parentId        = rc.parent           ?: "";
+	canAddChildren  = prc.canAddChildren  ?: false;
+	gridFields      = prc.gridFields      ?: [];
+	cleanGridFields = prc.cleanGridFields ?: [];
+	gridFieldTitles = prc.gridFieldTitles ?: [];
 
 	objectTitle    = translateResource( uri="page-types.#pageType#:name", defaultValue=pageType );
 	addRecordTitle = translateResource( uri="cms:datamanager.addrecord.title", data=[ LCase( objectTitle ) ] );
@@ -34,8 +36,8 @@
 		<table id="object-listing-table-#LCase( pageType )#" class="table table-hover object-listing-table">
 			<thead>
 				<tr>
-					<cfloop array="#gridFields#" index="fieldName">
-						<th data-field="#fieldName#">#translateResource( uri="preside-objects.#pageType#:field.#fieldName#.title", defaultValue=translateResource( "cms:preside-objects.default.field.#fieldName#.title" ) )#</th>
+					<cfloop array="#gridFields#" item="fieldName" index="i">
+						<th data-field="#cleanGridFields[ i ]#">#gridFieldTitles[ i ]#</th>
 					</cfloop>
 					<th>&nbsp;</th>
 				</tr>

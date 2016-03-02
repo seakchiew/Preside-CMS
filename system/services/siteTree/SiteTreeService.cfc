@@ -327,13 +327,13 @@ component singleton=true {
 			, maxRows      = arguments.maxRows
 			, startRow     = arguments.startRow
 			, orderBy      = arguments.orderBy
+			, filter       = "page.parent_page = :page.parent_page and page.page_type = :page.page_type and page.trashed = :page.trashed"
+			, filterParams = { "page.parent_page"=arguments.parentId, "page.page_type"=arguments.pageType, "page.trashed"=false }
 		};
 
-		args.selectFields.prepend( "id" );
-
 		if ( Len( Trim( arguments.searchQuery ) ) ) {
-			args.filter &= " and title like :title";
-			args.filterParams.title = "%" & arguments.searchQuery & "%";
+			args.filter &= " and page.title like :page.title";
+			args.filterParams[ "page.title" ] = "%" & arguments.searchQuery & "%";
 		}
 
 		result.records = _getPresideObjectService().selectData( argumentCollection = args );
@@ -1078,7 +1078,7 @@ component singleton=true {
 		var fields = _getPresideObjectService().getObjectAttribute(
 			  objectName    = arguments.objectName
 			, attributeName = "sitetreeGridFields"
-			, defaultValue  = "id,datecreated,datemodified"
+			, defaultValue  = "page.title,page.active,page.datemodified"
 		);
 
 		return ListToArray( fields );
@@ -1087,12 +1087,13 @@ component singleton=true {
 	private array function _prepareGridFieldsForSqlSelect( required array gridFields, required string objectName, boolean versionTable=false ) output=false {
 		var sqlFields          = Duplicate( arguments.gridFields );
 		var field              = "";
+		var fieldObject        = "";
 		var i                  = "";
-		var props              = _getPresideObjectService().getObjectProperties( arguments.objectName );
+		var props              = {};
 		var prop               = "";
 		var objName            = arguments.versionTable ? "vrsn_" & arguments.objectName : arguments.objectName;
 		var labelField         = _getPresideObjectService().getObjectAttribute( objName, "labelField", "label" );
-		var replacedLabelField = !Find( ".", labelField ) ? "#objName#.${labelfield} as #ListLast( labelField, '.' )#" : "${labelfield} as #labelField#";
+		var replacedLabelField = !Find( ".", labelField ) ? "#objName#.${labelfield} as #ListLast( labelField, '.' )#" : "${labelfield} as #ListLast( labelField, '.' )#";
 
 		sqlFields.delete( "id" );
 		sqlFields.append( "#objName#.id" );
@@ -1103,11 +1104,16 @@ component singleton=true {
 
 		// ensure all fields are valid + get labels from join tables
 		for( i=ArrayLen( sqlFields ); i gt 0; i-- ){
-			field = sqlFields[i];
-			if ( field == "#objName#.id" || field == replacedLabelField ) {
+			field       = ListLen( sqlFields[i], "." ) > 1 ? ListRest( sqlFields[i], "." ) : sqlFields[i];
+			fieldObject = ListLen( sqlFields[i], "." ) > 1 ? ListFirst( sqlFields[i], "." ) : arguments.objectName;
+
+			if ( sqlFields[ i ] == "#objName#.id" || sqlFields[ i ] == replacedLabelField ) {
 				continue;
 			}
-			if ( not StructKeyExists( props, field ) ) {
+
+			props[ fieldObject ] = props[ fieldObject ] ?: _getPresideObjectService().getObjectProperties( fieldObject );
+
+			if ( not StructKeyExists( props[ fieldObject ], field ) ) {
 				if ( arguments.versiontable && field.startsWith( "_version_" ) ) {
 					sqlFields[i] = objName & "." & field;
 				} else {
@@ -1116,7 +1122,7 @@ component singleton=true {
 				continue;
 			}
 
-			prop = props[ field ];
+			prop = props[ fieldObject ][ field ];
 
 			switch( prop.relationship ?: "none" ) {
 				case "one-to-many":
@@ -1125,11 +1131,11 @@ component singleton=true {
 				break;
 
 				case "many-to-one":
-					sqlFields[i] = ( prop.name ?: "" ) & ".${labelfield} as " & field;
+					sqlFields[i] = sqlFields[i] & ".${labelfield} as " & field;
 				break;
 
 				default:
-					sqlFields[i] = objName & "." & field;
+					sqlFields[i] = fieldObject & "." & field;
 			}
 
 			if ( arguments.versionTable ) {

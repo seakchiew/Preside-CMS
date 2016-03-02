@@ -1,5 +1,6 @@
 component extends="preside.system.base.AdminHandler" {
 	property name="siteTreeService"                  inject="siteTreeService";
+	property name="presideObjectService"             inject="presideObjectService";
 	property name="formsService"                     inject="formsService";
 	property name="pageTypesService"                 inject="pageTypesService";
 	property name="validationEngine"                 inject="validationEngine";
@@ -228,7 +229,11 @@ component extends="preside.system.base.AdminHandler" {
 
 			setNextEvent( url=event.buildAdminLink( linkTo="sitetree.addPage", queryString="parent_page=#parent#&page_type=#rc.page_type#" ), persistStruct=persist );
 		} else {
-			setNextEvent( url=event.buildAdminLink( linkTo="sitetree.editPage", querystring="id=#newId#" ) );
+			if ( _isManagedPage( formData.parent_page, formData.page_type ) ) {
+				setNextEvent( url=event.buildAdminLink( linkto="sitetree.managedChildren", querystring="parent=#formData.parent_page#&pageType=#formData.page_type#" ) );
+			} else {
+				setNextEvent( url=event.buildAdminLink( linkTo="sitetree", querystring="selected=#newId#" ) );
+			}
 		}
 	}
 
@@ -351,8 +356,11 @@ component extends="preside.system.base.AdminHandler" {
 
 		getPlugin( "MessageBox" ).info( translateResource( uri="cms:sitetree.pageEdited.confirmation" ) );
 
-
-		setNextEvent( url=event.buildAdminLink( linkTo="sitetree.editPage", querystring="id=#pageId#" ) );
+		if ( _isManagedPage( page.parent_page, page.page_type ) ) {
+			setNextEvent( url=event.buildAdminLink( linkto="sitetree.managedChildren", querystring="parent=#page.parent_page#&pageType=#page.page_type#" ) );
+		} else {
+			setNextEvent( url=event.buildAdminLink( linkTo="sitetree", querystring="selected=#pageId#" ) );
+		}
 	}
 
 	public void function translatePage( event, rc, prc ) {
@@ -840,8 +848,10 @@ component extends="preside.system.base.AdminHandler" {
 		var parentId = rc.parent   ?: "";
 		var pageType = rc.pageType ?: "";
 
-		prc.gridFields = _getObjectFieldsForGrid( pageType );
-		prc.parentPage = _getPageAndThrowOnMissing( argumentCollection=arguments, pageId=parentId );
+		prc.gridFields      = _getObjectFieldsForGrid( pageType );
+		prc.cleanGridFields = _cleanGridFields( prc.gridFields );
+		prc.gridFieldTitles = _getGridFieldTitles( prc.gridFields, pageType );
+		prc.parentPage      = _getPageAndThrowOnMissing( argumentCollection=arguments, pageId=parentId );
 
 		if ( !Len( Trim( pageType ) ) || !pageTypesService.pageTypeExists( pageType ) || !ListFindNoCase( pageTypesService.getPageType( prc.parentPage.page_type ).getManagedChildTypes(), pageType ) ) {
 			event.notFound();
@@ -862,9 +872,10 @@ component extends="preside.system.base.AdminHandler" {
 	}
 
 	public void function getManagedPagesForAjaxDataTables( event, rc, prc ) {
-		var parentId = rc.parent   ?: "";
-		var pageType = rc.pageType ?: "";
-		var gridFields = ListToArray( rc.gridFields );
+		var parentId        = rc.parent   ?: "";
+		var pageType        = rc.pageType ?: "";
+		var gridFields      = ListToArray( rc.gridFields );
+		var cleanGridFields = _cleanGridFields( gridFields );
 
 		prc.parentPage = _getPageAndThrowOnMissing( argumentCollection=arguments, pageId=parentId );
 
@@ -890,10 +901,13 @@ component extends="preside.system.base.AdminHandler" {
 
 		for( var record in records ){
 			for( var field in gridFields ){
-				records[ field ][ records.currentRow ] = renderField( pageType, field, record[ field ], [ "adminDataTable", "admin" ] );
+				var objectName = ListLen( field, "." ) > 1 ? ListFirst( field, "." ) : pageType;
+				field = ListLen( field, "." ) > 1 ? ListRest( field, "." ) : field;
+
+				records[ field ][ records.currentRow ] = renderField( objectName, field, record[ field ], [ "adminDataTable", "admin" ] );
 			}
 			var args = record;
-			args.title 			= record[ gridFields[1] ];
+			args.title 			= record[ ListLast( gridFields[1], "." ) ];
 			args.canEdit        = _checkPermissions( argumentCollection=arguments, key="edit"        , pageId=args.id, throwOnError=false );
 			args.canDelete      = _checkPermissions( argumentCollection=arguments, key="delete"      , pageId=args.id, throwOnError=false );
 			args.canViewHistory = _checkPermissions( argumentCollection=arguments, key="viewversions", pageId=args.id, throwOnError=false );
@@ -902,9 +916,9 @@ component extends="preside.system.base.AdminHandler" {
 		}
 
 		QueryAddColumn( records, "_options" , optionsCol );
-		ArrayAppend( gridFields, "_options" );
+		ArrayAppend( cleanGridFields, "_options" );
 
-		event.renderData( type="json", data=dtHelper.queryToResult( records, gridFields, results.totalRecords ) );
+		event.renderData( type="json", data=dtHelper.queryToResult( records, cleanGridFields, results.totalRecords ) );
 	}
 
 	public void function previewPage( event, rc, prc ) {
@@ -1030,5 +1044,32 @@ component extends="preside.system.base.AdminHandler" {
 
 	private array function _getObjectFieldsForGrid( required string objectName ) {
 		return siteTreeService.listGridFields( arguments.objectName );
+	}
+
+	private array function _cleanGridFields( required array gridFields ) {
+		var cleanFields = [];
+
+		for( var field in arguments.gridFields ) {
+			cleanFields.append( ListLen( field, "." ) > 1 ? ListRest( field, "." ) : field );
+		}
+
+		return cleanFields;
+	}
+
+	private array function _getGridFieldTitles( required array gridFields, required string pageType ) {
+		var titles = [];
+
+		for( var field in arguments.gridFields ) {
+			var objectName = ListLen( field, "." ) > 1 ? ListFirst( field, "." ) : arguments.pageType;
+			var fieldName  = ListLen( field, "." ) > 1 ? ListRest( field, "." ) : field;
+			var uriRoot    = presideObjectService.getResourceBundleUriRoot( objectName );
+
+			titles.append(
+				translateResource( uri="#uriRoot#field.#fieldName#.title", defaultValue=translateResource( "cms:preside-objects.default.field.#fieldName#.title" ) )
+			);
+
+		}
+
+		return titles;
 	}
 }

@@ -3,8 +3,9 @@ component {
 	public void function setupApplication(
 		  string  id                           = CreateUUId()
 		, string  name                         = arguments.id & ExpandPath( "/" )
-		, array   skipSessionsFor              = [ "^https?://(.*?)/api/.*" ]
-		, boolean sessionManagement            = _areSessionsEnabledForRequest( arguments.skipSessionsFor )
+		, array   statelessUrlPatterns         = [ "^https?://(.*?)/api/.*" ]
+		, array   statelessUserAgentPatterns   = [ "CFSCHEDULE", "(bot\b|crawler\b|baiduspider|80legs|ia_archiver|voyager|curl|wget|yahoo! slurp|mediapartners-google)" ]
+		, boolean sessionManagement            = !isStatelessRequest( _getUrl() )
 		, any     sessionTimeout               = CreateTimeSpan( 0, 0, 40, 0 )
 		, numeric applicationReloadTimeout     = 1200
 		, numeric applicationReloadLockTimeout = 15
@@ -17,6 +18,8 @@ component {
 		this.sessionManagement                       = arguments.sessionManagement;
 		this.sessionTimeout                          = arguments.sessionTimeout;
 		this.scriptProtect                           = arguments.scriptProtect;
+		this.statelessUrlPatterns                    = arguments.statelessUrlPatterns;
+		this.statelessUserAgentPatterns              = arguments.statelessUserAgentPatterns;
 
 		_setupMappings( argumentCollection=arguments );
 		_setupDefaultTagAttributes();
@@ -358,13 +361,15 @@ component {
 		var pc           = getPageContext();
 		var resp         = pc.getResponse();
 		var cbController = _getColdboxController();
+		var allCookies   = resp.getHeaders( "Set-Cookie" );
 
-		if ( IsNull( cbController ) ) {
-			resp.setHeader( "Set-Cookie", "" );
+		if ( IsNull( cbController ) || isStatelessRequest( _getUrl() ) ) {
+			if ( ArrayLen( allCookies ) ) {
+				resp.setHeader( "Set-Cookie", "" );
+			}
 			return;
 		}
 
-		var allCookies        = resp.getHeaders( "Set-Cookie" );
 		var httpRegex         = "(^|;|\s)HttpOnly(;|$)";
 		var secureRegex       = "(^|;|\s)Secure(;|$)";
 		var cleanedCookies    = [];
@@ -477,37 +482,49 @@ component {
 		}
 	}
 
-	private boolean function _areSessionsEnabledForRequest( required array urlPatterns ) {
-		if ( arguments.urlPatterns.len() ) {
-			var requestData = GetHttpRequestData();
-			var requestUrl  = requestData.headers[ 'X-Original-URL' ] ?: "";
+	private boolean function isStatelessRequest( required string fullUrl ) {
+		var urlPatterns   = this.statelessUrlPatterns       ?: [];
+		var agentPatterns = this.statelessUserAgentPatterns ?: [];
+		var userAgent     = cgi.http_user_agent             ?: "";
 
-			if ( !Len( Trim( requestUrl ) ) ) {
-				requestUrl = request[ "javax.servlet.forward.request_uri" ] ?: "";
-
-				if ( !Len( Trim( requestUrl ) ) ) {
-					requestUrl = cgi.request_url;
-				} else {
-					var protocol = "http";
-
-					if( isBoolean( cgi.server_port_secure ) AND cgi.server_port_secure){
-						protocol = "https";
-					} else {
-						protocol = requestData.headers[ "x-forwarded-proto" ] ?: ( requestData.headers[ "x-scheme" ] ?: LCase( ListFirst( cgi.server_protocol, "/" ) ) );
-					}
-
-					requestUrl = protocol & "://" & cgi.http_host & requestUrl;
-				}
-			}
-
-			for( var pattern in arguments.urlPatterns ) {
-				if ( requestUrl.reFindNoCase( pattern ) ) {
-					return false;
-				}
+		for( var pattern in urlPatterns ) {
+			if ( arguments.fullUrl.reFindNoCase( pattern ) ) {
+				return true;
 			}
 		}
 
-		return true;
+		for( var pattern in agentPatterns ) {
+			if ( userAgent.reFindNoCase( pattern ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private string function _getUrl() {
+		var requestData = GetHttpRequestData();
+		var requestUrl  = requestData.headers[ 'X-Original-URL' ] ?: "";
+
+		if ( !Len( Trim( requestUrl ) ) ) {
+			requestUrl = request[ "javax.servlet.forward.request_uri" ] ?: "";
+
+			if ( !Len( Trim( requestUrl ) ) ) {
+				requestUrl = cgi.request_url;
+			} else {
+				var protocol = "http";
+
+				if( isBoolean( cgi.server_port_secure ) AND cgi.server_port_secure){
+					protocol = "https";
+				} else {
+					protocol = requestData.headers[ "x-forwarded-proto" ] ?: ( requestData.headers[ "x-scheme" ] ?: LCase( ListFirst( cgi.server_protocol, "/" ) ) );
+				}
+
+				requestUrl = protocol & "://" & cgi.http_host & requestUrl;
+			}
+		}
+
+		return requestUrl;
 	}
 
 }
