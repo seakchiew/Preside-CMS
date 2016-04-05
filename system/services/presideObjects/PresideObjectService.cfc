@@ -143,7 +143,7 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 	 */
 	public query function selectData(
 		  required string  objectName
-		,          string  id                = ""
+		,          string  id
 		,          array   selectFields      = []
 		,          any     filter            = {}
 		,          struct  filterParams      = {}
@@ -322,7 +322,7 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 			);
 
 			result = _runSql( sql=sql[1], dsn=obj.dsn, params=params, returnType=adapter.getInsertReturnType() );
-			
+
 			if ( adapter.requiresManualCommitForTransactions() ){
 				_runSql( sql='commit', dsn=obj.dsn );
 			}
@@ -401,7 +401,7 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 	public numeric function updateData(
 		  required string  objectName
 		, required struct  data
-		,          string  id                      = ""
+		,          string  id
 		,          any     filter                  = {}
 		,          struct  filterParams            = {}
 		,          array   extraFilters            = []
@@ -439,7 +439,7 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 			}
 		}
 
-		if ( not Len( Trim( arguments.id ) ) and _isEmptyFilter( arguments.filter ) and not arguments.forceUpdateAll ) {
+		if ( !Len( Trim( arguments.id ?: "" ) ) and _isEmptyFilter( arguments.filter ) and not arguments.forceUpdateAll ) {
 			throw(
 				  type    = "PresideObjects.updateAllProtection"
 				, message = "A call to update records in [#arguments.objectName#] was made without any filter which would lead to all records being updated"
@@ -467,7 +467,7 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 			if ( requiresVersioning ) {
 				_getVersioningService().saveVersionForUpdate(
 					  objectName           = arguments.objectName
-					, id                   = arguments.id
+					, id                   = arguments.id ?: NullValue()
 					, filter               = preparedFilter.filter
 					, filterParams         = preparedFilter.filterParams
 					, data                 = cleanedData
@@ -498,7 +498,7 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 			if ( StructCount( manyToManyData ) ) {
 				var updatedRecords = [];
 
-				if ( Len( Trim( arguments.id ) ) ) {
+				if ( Len( Trim( arguments.id ?: "" ) ) ) {
 					updatedRecords = [ arguments.id ];
 				} else {
 					updatedRecords = selectData(
@@ -575,7 +575,7 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 	 */
 	public numeric function deleteData(
 		  required string  objectName
-		,          string  id             = ""
+		,          string  id
 		,          any     filter         = {}
 		,          struct  filterParams   = {}
 		,          array   extraFilters   = []
@@ -594,7 +594,7 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 		var result         = "";
 		var preparedFilter = "";
 
-		if ( !Len( Trim( arguments.id ) ) && _isEmptyFilter( arguments.filter ) && !arguments.forceDeleteAll ) {
+		if ( !Len( Trim( arguments.id ?: "" ) ) && _isEmptyFilter( arguments.filter ) && !arguments.forceDeleteAll ) {
 			throw(
 				  type    = "PresideObjects.deleteAllProtection"
 				, message = "A call to delete records in [#arguments.objectName#] was made without any filter which would lead to all records being deleted"
@@ -604,7 +604,7 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 
 		preparedFilter = _prepareFilter(
 			  objectName        = arguments.objectName
-			, id                = arguments.id
+			, id                = arguments.id ?: NullValue()
 			, filter            = arguments.filter
 			, filterParams      = arguments.filterParams
 			, extraFilters      = arguments.extraFilters
@@ -711,10 +711,11 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 			}
 		}
 
-		if ( not Len( Trim( selectDataArgs.orderBy ) ) ) {
-			var relatedVia = getObjectPropertyAttribute( arguments.objectName, arguments.propertyName, "relatedVia", "" );
-			if ( Len( Trim( relatedVia ) ) ) {
-				selectDataArgs.orderBy = relatedVia & ".sort_order"
+		if ( !Len( Trim( selectDataArgs.orderBy ) ) ) {
+			var relatedVia   = getObjectPropertyAttribute( arguments.objectName, arguments.propertyName, "relatedVia", "" );
+			var hasSortOrder = Len( Trim( relatedVia ) ) && getObjectProperties( relatedVia ).keyExists( "sort_order" );
+			if ( hasSortOrder ) {
+				selectDataArgs.orderBy = relatedVia & ".sort_order";
 			}
 		}
 
@@ -757,16 +758,22 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 		if ( Len( Trim( pivotTable ) ) and Len( Trim( targetObject ) ) ) {
 			var newRecords      = ListToArray( arguments.targetIdList );
 			var anythingChanged = false;
+			var hasSortOrder    = getObjectProperties( pivotTable ).keyExists( "sort_order" );
+			var currentSelect   = [ "#targetFk# as targetId" ];
+
+			if ( hasSortOrder ) {
+				currentSelect.append( "sort_order" );
+			}
 
 			transaction {
 				var currentRecords = selectData(
 					  objectName   = pivotTable
-					, selectFields = [ "#targetFk# as targetId", "sort_order" ]
+					, selectFields = currentSelect
 					, filter       = { "#sourceFk#" = arguments.sourceId }
 				);
 
 				for( var record in currentRecords ) {
-					if ( newRecords.find( record.targetId ) && newRecords.find( record.targetId ) == record.sort_order ) {
+					if ( newRecords.find( record.targetId ) && ( !hasSortOrder || newRecords.find( record.targetId ) == record.sort_order ) ) {
 						ArrayDelete( newRecords, record.targetId );
 					} else {
 						anythingChanged = true;
@@ -786,8 +793,8 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 					for( var i=1; i <=newRecords.len(); i++ ) {
 						insertData(
 							  objectName    = pivotTable
-							, data          = { "#sourceFk#" = arguments.sourceId, "#targetFk#" = newRecords[i], sort_order=i }
 							, useVersioning = false
+							, data          = { "#sourceFk#"=arguments.sourceId, "#targetFk#"=newRecords[i], sort_order=i }
 						);
 					}
 				}
@@ -1828,18 +1835,18 @@ component singleton=true autodoc=true displayName="Preside Object Service" {
 
 	private struct function _prepareFilter(
 		  required string objectName
-		, required string id
 		, required any    filter
 		, required struct filterParams
 		, required array  extraFilters
 		, required array  savedFilters
 		, required any    adapter
 		, required struct columnDefinitions
+		,          string id
 	) {
 		_announceInterception( "prePrepareObjectFilter", arguments );
 
 		var result = {
-			  filter       = Len( Trim( arguments.id ) ) ? { id = arguments.id } : arguments.filter
+			  filter       = arguments.keyExists( "id" ) ? { id = arguments.id } : arguments.filter
 			, filterParams = arguments.filterParams
 		};
 
