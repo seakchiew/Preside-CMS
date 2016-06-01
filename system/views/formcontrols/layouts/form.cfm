@@ -1,6 +1,7 @@
 <cfscript>
 	tabs               = args.tabs          ?: [];
 	content            = args.content       ?: "";
+	formName           = args.formName      ?: "";
 	validationJs       = args.validationJs  ?: "";
 	formId             = args.formId        ?: "";
 	tabsPlacement      = args.tabsPlacement ?: "top";
@@ -39,6 +40,8 @@
 
 			<div class="tab-content">
 	</cfif>
+
+	<input type="hidden" name="$presideform" value="#formName#">
 
 	#content#
 

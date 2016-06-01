@@ -103,7 +103,7 @@ component {
 				key = GenerateSecretKey( "AES" );
 			}
 
-			$getSystemConfigurationService().saveSetting( "system", "cookie_encrypt_key", key );
+			$getSystemConfigurationService().saveSetting( "system", "cookie_encryption_key", key );
 
 			if ( FileExists( legacyCookieKeyFile ) ) {
 				FileDelete( legacyCookieKeyFile );
@@ -120,7 +120,11 @@ component {
 	}
 
 	private string function _decryptIt( required string decValue ) {
-		return Decrypt( arguments.decValue, _getEncryptionKey(), "AES", "HEX" );
+		try {
+			return Decrypt( arguments.decValue, _getEncryptionKey(), "AES", "HEX" );
+		} catch( any e ) {
+			return "";
+		}
 	}
 
 // GETTERS AND SETTERS
