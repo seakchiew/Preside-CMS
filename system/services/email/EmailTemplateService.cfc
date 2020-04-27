@@ -77,6 +77,8 @@ component {
 		,          struct  messageHeaders = {}
 		,          boolean isTest         = false
 	) {
+		$announceInterception( "prePrepareEmailMessage", arguments );
+
 		var messageTemplate  = getTemplate( id=arguments.template, allowDrafts=arguments.isTest );
 		var isSystemTemplate = _getSystemEmailTemplateService().templateExists( arguments.template );
 
@@ -93,12 +95,18 @@ component {
 		try {
 			var params = Duplicate( arguments.parameters );
 			params.append( prepareParameters(
-				  template      = arguments.template
-				, recipientType = messageTemplate.recipient_type
-				, recipientId   = arguments.recipientId
-				, args          = arguments.args
+				  template       = arguments.template
+				, recipientType  = messageTemplate.recipient_type
+				, recipientId    = arguments.recipientId
+				, args           = arguments.args
+				, templateDetail = messageTemplate
 			) );
 
+			var unsubscribeLink = _getEmailRecipientTypeService().getUnsubscribeLink(
+				  recipientType = messageTemplate.recipient_type
+				, recipientId   = arguments.recipientId
+				, templateId    = arguments.template
+			);
 			var message = {
 				  subject     = replaceParameterTokens( messageTemplate.subject, params, "text" )
 				, from        = messageTemplate.from_address
@@ -125,53 +133,52 @@ component {
 				), true );
 			}
 
-			var body = replaceParameterTokens( $renderContent( renderer="richeditor", data=messageTemplate.html_body, context="email" ), params, "html" );
+			var body = $renderContent( renderer="richeditor", data=messageTemplate.html_body, context="email" );
 			var plainTextArgs = {
 				  layout        = messageTemplate.layout
 				, emailTemplate = arguments.template
+				, templateDetail = messageTemplate
 				, blueprint     = messageTemplate.email_blueprint
 				, type          = "text"
 				, subject       = message.subject
-				, body          = replaceParameterTokens( messageTemplate.text_body, params, "text" )
+				, body          = messageTemplate.text_body
 			};
-			message.htmlBody = _getEmailLayoutService().renderLayout(
-				  layout        = messageTemplate.layout
-				, emailTemplate = arguments.template
-				, blueprint     = messageTemplate.email_blueprint
-				, type          = "html"
-				, subject       = message.subject
-				, body          = body
-			);
+			var htmlArgs = {
+				  layout          = messageTemplate.layout
+				, emailTemplate   = arguments.template
+				, templateDetail   = messageTemplate
+				, blueprint       = messageTemplate.email_blueprint
+				, type            = "html"
+				, subject         = message.subject
+				, body            = body
+				, unsubscribeLink = unsubscribeLink
+			};
+			message.htmlBody = _getEmailLayoutService().renderLayout( argumentCollection=htmlArgs );
+			message.htmlBody = replaceParameterTokens( message.htmlBody, params, "html" );
 
 			if ( IsBoolean( messageTemplate.view_online ?: "" ) && messageTemplate.view_online ) {
-				var viewOnlineLink = getViewOnlineLink( message.htmlBody );
-
-				message.htmlBody = _getEmailLayoutService().renderLayout(
-					  layout         = messageTemplate.layout
-					, emailTemplate  = arguments.template
-					, blueprint      = messageTemplate.email_blueprint
-					, type           = "html"
-					, subject        = message.subject
-					, body           = body
-					, viewOnlineLink = viewOnlineLink
-				);
-
-				plainTextArgs.viewOnlineLink = viewOnlineLink;
+				htmlArgs.viewOnlineLink = plainTextArgs.viewOnlineLink = getViewOnlineLink( message.htmlBody );
+				message.htmlBody = _getEmailLayoutService().renderLayout( argumentCollection=htmlArgs );
+				message.htmlBody = replaceParameterTokens( message.htmlBody, params, "html" );
 			}
 
 			message.textBody = _getEmailLayoutService().renderLayout( argumentCollection=plainTextArgs );
+			message.textBody = replaceParameterTokens( message.textBody, params, "text" );
 
 			if ( $isFeatureEnabled( "emailStyleInliner" ) ) {
 				message.htmlBody = _getEmailStyleInliner().inlineStyles( message.htmlBody );
 			}
 
+			if ( Len( Trim( unsubscribeLink ) ) && !StructKeyExists( message.params, "List-Unsubscribe" ) ) {
+				message.params[ "List-Unsubscribe" ] = { name="List-Unsubscribe", value=unsubscribeLink };
+			}
 
+			$announceInterception( "postPrepareEmailMessage", { message=message, args=arguments } );
 		} catch( any e ) {
 			rethrow;
 		} finally {
 			_getEmailSendingContextService().clearContext();
 		}
-
 
 		return message;
 	}
@@ -207,10 +214,11 @@ component {
 			);
 
 			var params = prepareParameters(
-				  template      = arguments.template
-				, recipientType = messageTemplate.recipient_type
-				, recipientId   = arguments.previewRecipient
-				, args          = {}
+				  template       = arguments.template
+				, recipientType  = messageTemplate.recipient_type
+				, recipientId    = arguments.previewRecipient
+				, args           = {}
+				, templateDetail = messageTemplate
 			);
 		} else {
 			var params = getPreviewParameters(
@@ -219,42 +227,39 @@ component {
 			);
 		}
 
+		enableDomainOverwriteForBuildLink( template=messageTemplate );
+
 		var message       = { subject = replaceParameterTokens( messageTemplate.subject, params, "text" ) };
-		var body          = replaceParameterTokens( $renderContent( renderer="richeditor", data=messageTemplate.html_body, context="email" ), params, "html" );
+		var body          = $renderContent( renderer="richeditor", data=messageTemplate.html_body, context="email" );
 		var plainTextArgs = {
-			  layout        = messageTemplate.layout
-			, emailTemplate = arguments.template
-			, blueprint     = messageTemplate.email_blueprint
-			, type          = "text"
-			, subject       = message.subject
-			, body          = replaceParameterTokens( messageTemplate.text_body, params, "text" )
-		}
+			  layout         = messageTemplate.layout
+			, emailTemplate  = arguments.template
+			, templateDetail = messageTemplate
+			, blueprint      = messageTemplate.email_blueprint
+			, type           = "text"
+			, subject        = message.subject
+			, body           = messageTemplate.text_body
+		};
+		var htmlArgs = {
+			  layout         = messageTemplate.layout
+			, emailTemplate  = arguments.template
+			, templateDetail = messageTemplate
+			, blueprint      = messageTemplate.email_blueprint
+			, type           = "html"
+			, subject        = message.subject
+			, body           = body
+		};
 
-		message.htmlBody = _getEmailLayoutService().renderLayout(
-			  layout        = messageTemplate.layout
-			, emailTemplate = arguments.template
-			, blueprint     = messageTemplate.email_blueprint
-			, type          = "html"
-			, subject       = message.subject
-			, body          = body
-		);
+		message.htmlBody = _getEmailLayoutService().renderLayout( argumentCollection=htmlArgs );
+		message.htmlBody = replaceParameterTokens( message.htmlBody, params, "html" );
 		if ( IsBoolean( messageTemplate.view_online ?: "" ) && messageTemplate.view_online ) {
-			var viewOnlineLink = getViewOnlineLink( message.htmlBody );
-
-			message.htmlBody = _getEmailLayoutService().renderLayout(
-				  layout         = messageTemplate.layout
-				, emailTemplate  = arguments.template
-				, blueprint      = messageTemplate.email_blueprint
-				, type           = "html"
-				, subject        = message.subject
-				, body           = body
-				, viewOnlineLink = viewOnlineLink
-			);
-
-			plainTextArgs.viewOnlineLink = viewOnlineLink;
+			htmlArgs.viewOnlineLink = plainTextArgs.viewOnlineLink = getViewOnlineLink( message.htmlBody );
+			message.htmlBody = _getEmailLayoutService().renderLayout( argumentCollection=htmlArgs );
+			message.htmlBody = replaceParameterTokens( message.htmlBody, params, "html" );
 		}
 
 		message.textBody = _getEmailLayoutService().renderLayout( argumentCollection=plainTextArgs );
+		message.textBody = replaceParameterTokens( message.textBody, params, "text" );
 
 		if ( $isFeatureEnabled( "emailStyleInliner" ) ) {
 			message.htmlBody = _getEmailStyleInliner().inlineStyles( message.htmlBody );
@@ -265,6 +270,8 @@ component {
 		if ( Len( Trim( previewRecipient ) ) ) {
 			_getEmailSendingContextService().clearContext();
 		}
+
+		disableDomainOverwriteForBuildLink();
 
 		return message;
 	}
@@ -401,7 +408,11 @@ component {
 				}
 			}
 
-			var newId = $getPresideObject( "email_template" ).insertData( data=arguments.template, isDraft=arguments.isDraft );
+			var newId = $getPresideObject( "email_template" ).insertData(
+				  data                    = arguments.template
+				, isDraft                 = arguments.isDraft
+				, insertManyToManyRecords = true
+			);
 			newId = newId ?: "";
 			$audit(
 				  action   = arguments.isDraft ? "createDraftEmailTemplate" : "insertEmailTemplate"
@@ -444,6 +455,7 @@ component {
 			, allowDraftVersions = arguments.allowDrafts
 			, fromversionTable   = arguments.fromVersionTable
 			, specificVersion    = arguments.version
+			, useCache           = false
 		);
 
 		for( var t in template ) {
@@ -619,7 +631,7 @@ component {
 	 * @markAsSent.hint Whether or not to mark a 'fixedschedule' template as sent
 	 */
 	public string function updateScheduledSendFields( required string templateId, boolean markAsSent=false ) {
-		var template    = getTemplate( arguments.templateId );
+		var template    = getTemplate( id=arguments.templateId, allowDrafts=true, fromVersionTable=false );
 		var updatedData = { schedule_next_send_date = "" };
 
 		if ( template.sending_method == "scheduled" ) {
@@ -664,7 +676,7 @@ component {
 			};
 		}
 
-		return saveTemplate( id=arguments.templateId, template=updatedData );
+		return saveTemplate( id=arguments.templateId, template=updatedData, isDraft=( template._version_is_draft ?: false ) );
 	}
 
 	/**
@@ -681,6 +693,7 @@ component {
 			, extraFilters       = [ { filter="schedule_date <= :schedule_date", filterParams={ schedule_date=_getNow() } } ]
 			, orderBy            = "schedule_date"
 			, allowDraftVersions = false
+			, useCache           = false
 		);
 
 		return records.recordCount ? ValueArray( records.id ) : [];
@@ -699,6 +712,7 @@ component {
 			, extraFilters       = [ { filter="schedule_next_send_date <= :schedule_next_send_date", filterParams={ schedule_next_send_date=_getNow() } } ]
 			, orderBy            = "schedule_next_send_date"
 			, allowDraftVersions = false
+			, useCache           = false
 		);
 
 		return records.recordCount ? ValueArray( records.id ) : [];
@@ -770,6 +784,7 @@ component {
 			, filter       = { id=arguments.templateId, "send_logs.sent"=true }
 			, forceJoins   = "inner"
 			, extraFilters = extraFilters
+			, useCache     = false
 		);
 
 		return Val( result.sent_count ?: "" );
@@ -808,6 +823,7 @@ component {
 			, filter       = { id=arguments.templateId, "send_logs.delivered"=true }
 			, forceJoins   = "inner"
 			, extraFilters = extraFilters
+			, useCache     = false
 		);
 
 		return Val( result.delivered_count ?: "" );
@@ -979,6 +995,7 @@ component {
 			  selectFields = [ "Count( queued_emails.id ) as queued_count" ]
 			, filter       = { id=arguments.templateId }
 			, forceJoins   = "inner"
+			, useCache     = false
 		);
 
 		return Val( result.queued_count ?: "" );
@@ -1223,6 +1240,32 @@ component {
 		);
 	}
 
+	public void function enableDomainOverwriteForBuildLink( required struct template ) {
+		if ( !$isFeatureEnabled( "emailOverwriteDomain" ) ) {
+			return;
+		}
+
+		if ( len( arguments.template.id ?: "" ) && len( arguments.template.layout ?: "" ) && len( arguments.template.email_blueprint ?: "" ) ) {
+			var layoutConfig = _getEmailLayoutService().getLayoutConfig(
+				  layout        = arguments.template.layout
+	            , emailTemplate = arguments.template.id
+	            , blueprint     = arguments.template.email_blueprint
+	            , merged        = true
+			);
+
+			if ( len( layoutConfig.overwrite_domain ?: "" ) ) {
+				$getRequestContext().setOverwriteDomainForBuildLink( domain=layoutConfig.overwrite_domain );
+			}
+		}
+	}
+
+	public void function disableDomainOverwriteForBuildLink() {
+		if ( !$isFeatureEnabled( "emailOverwriteDomain" ) ) {
+			return;
+		}
+
+		$getRequestContext().removeOverwriteDomainForBuildLink();
+	}
 
 // PRIVATE HELPERS
 	private void function _ensureSystemTemplatesHaveDbEntries() {
@@ -1253,7 +1296,7 @@ component {
 		, required string  unit
 		, required any     startDate
 	) {
-		if ( !_timeUnitToCfMapping.keyExists( arguments.unit ) ) {
+		if ( !StructKeyExists( _timeUnitToCfMapping, arguments.unit ) ) {
 			return "";
 		}
 

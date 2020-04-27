@@ -1,7 +1,11 @@
 /**
  * The site service provides methods for interacting with the core "Site" system
+ *
+ * @singleton      true
+ * @presideService true
+ * @autdoc         true
  */
-component singleton=true displayname="Site service" autodoc=true {
+component displayname="Site service" {
 
 // CONSTRUCTOR
 	/**
@@ -21,7 +25,9 @@ component singleton=true displayname="Site service" autodoc=true {
 		_setPermissionService( arguments.permissionService );
 		_setColdbox( arguments.coldbox );
 
-		ensureDefaultSiteExists();
+		if ( $isFeatureEnabled( "sites" ) ) {
+			ensureDefaultSiteExists();
+		}
 
 		return this;
 	}
@@ -83,15 +89,17 @@ component singleton=true displayname="Site service" autodoc=true {
 		);
 
 		for( var match in possibleMatches ){
-			if ( arguments.path.startsWith( match.path ) ) {
+			if ( arguments.path.reFindNoCase( "^" & match.path ) ) {
 				return match;
 			}
 		}
 
 		var aliasMatch = _getSiteAliasDomainDao().selectData(
 			  selectFields = [ "site" ]
-			, filter       = { domain = arguments.domain }
+			, filter       = "( site_alias_domain.domain = '*' or site_alias_domain.domain = :domain )"
+			, filterParams = { domain = arguments.domain }
 			, savedFilters = [ "nonDeletedSites" ]
+			, orderBy      = "#dbAdapter.getLengthFunctionSql( 'site_alias_domain.domain' )# desc"
 		);
 
 		if ( aliasMatch.recordCount ) {

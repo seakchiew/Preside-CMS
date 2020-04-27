@@ -8,6 +8,8 @@ component extends="preside.system.modules.cbi18n.models.i18n" {
 	property name="sessionStorage"        inject="delayedInjector:sessionStorage";
 	property name="adminLanguages"        inject="coldbox:setting:adminLanguages";
 
+	variables._localeCache = {};
+
 	public any function init() {
 		super.init( argumentCollection=arguments );
 		return this;
@@ -82,8 +84,8 @@ component extends="preside.system.modules.cbi18n.models.i18n" {
 			ArrayAppend( bundles, "preside-objects." & po );
 		}
 
-		for( bundle in bundles ) {
-			json = resourceBundleService.getBundleAsJson(
+		for( var bundle in bundles ) {
+			var json = resourceBundleService.getBundleAsJson(
 				  bundle   = bundle
 				, language = ListFirst( locale, "-_" )
 				, country  = ListRest( locale, "-_" )
@@ -111,23 +113,42 @@ component extends="preside.system.modules.cbi18n.models.i18n" {
 			}
 		}
 
+		request._cbfwlocale = arguments.locale;
+		StructDelete( request, "_cbFwLanguageCode" );
+		StructDelete( request, "_cbFwCountryCode"  );
+
 		return super.setFwLocale( argumentCollection=arguments );
 	}
 
 	public any function getFwLocale() {
-		var locale = super.getFwLocale( argumentCollection=arguments );
-		var event = controller.getRequestService().getContext();
+		if ( !StructKeyExists( request, "_cbfwlocale" ) ) {
+			request._cbfwlocale = super.getFwLocale( argumentCollection=arguments );
 
-		if ( event.isAdminRequest() && adminLanguages.len() && !adminLanguages.findNoCase( locale ) ) {
-			if ( adminLanguages.len() == 1 ) {
-				return adminLanguages[ 1 ];
+			var event = controller.getRequestService().getContext();
+
+			if ( event.isAdminRequest() && adminLanguages.len() && !adminLanguages.findNoCase( request._cbfwlocale ) ) {
+				if ( adminLanguages.len() == 1 ) {
+					request._cbfwlocale = adminLanguages[ 1 ];
+				} else {
+					request._cbfwlocale = controller.getSetting( "default_locale" );
+				}
 			}
-
-			return controller.getSetting( "default_locale" );
 		}
 
-		return locale;
+		return request._cbfwlocale;
+	}
 
+	public string function getFWLanguageCode() {
+		if ( !StructKeyExists( request, "_cbFwLanguageCode" ) ) {
+			request._cbFwLanguageCode = super.getFWLanguageCode();
+		}
+		return request._cbFwLanguageCode
+	}
+	public string function getFWCountryCode() {
+		if ( !StructKeyExists( request, "_cbFwCountryCode" ) ) {
+			request._cbFwCountryCode = super.getFWCountryCode();
+		}
+		return request._cbFwCountryCode
 	}
 
 // PRIVATE HEPERS
@@ -143,8 +164,8 @@ component extends="preside.system.modules.cbi18n.models.i18n" {
 			ArrayAppend( bundles, "preside-objects." & po );
 		}
 
-		for( bundle in bundles ) {
-			json = resourceBundleService.getBundleAsJson(
+		for( var bundle in bundles ) {
+			var json = resourceBundleService.getBundleAsJson(
 				  bundle   = bundle
 				, language = ListFirst( locale, "-_" )
 				, country  = ListRest( locale, "-_" )
@@ -157,12 +178,20 @@ component extends="preside.system.modules.cbi18n.models.i18n" {
 	}
 
 	private boolean function _isDebugMode() {
-		if ( !request.keyExists( "_i18nDebugMode" ) ) {
+		if ( !StructKeyExists( request, "_i18nDebugMode" ) ) {
 			request._i18nDebugMode = sessionStorage.getVar( "_i18nDebugMode" );
 		}
 
 		request._i18nDebugMode = IsBoolean( request._i18nDebugMode ?: "" ) && request._i18nDebugMode;
 
 		return request._i18nDebugMode;
+	}
+
+	private any function buildLocale( string thisLocale="en_US" ) {
+		if ( !StructKeyExists( variables._localeCache, arguments.thisLocale ) ) {
+			variables._localeCache[ arguments.thisLocale ] = super.buildLocale( argumentCollection=arguments );
+		}
+
+		return variables._localeCache[ arguments.thisLocale ];
 	}
 }

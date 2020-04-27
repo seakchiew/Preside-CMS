@@ -40,7 +40,8 @@
 			  , useMultiActions     = typeof tableSettings.useMultiActions === "undefined" ? ( typeof cfrequest.useMultiActions === "undefined" ? true : cfrequest.useMultiActions ) : tableSettings.useMultiActions
 			  , $filterDiv          = $( '#' + tableId + '-filter' )
 			  , $favouritesDiv      = $( '#' + tableId + '-favourites' )
-			  , enabledContextHotkeys, refreshFavourites;
+			  , enabledContextHotkeys, refreshFavourites
+			  , lastAjaxResult;
 
 			setupDatatable = function(){
 				var $tableHeaders        = $listingTable.find( 'thead > tr > th')
@@ -224,13 +225,26 @@
 					},
 					fnDrawCallback : function() {
 						$( ".datatable-container" ).presideLoadingSheen( false );
+					},
+					fnFooterCallback: function ( nRow, aaData, iStart, iEnd, aiDisplay ) {
+						if ( $( nRow ).length ) {
+							if ( lastAjaxResult && typeof lastAjaxResult.sFooter !== "undefined" && lastAjaxResult.sFooter.length ) {
+								$( nRow ).show().find( "th:first" ).html( lastAjaxResult.sFooter );
+							} else {
+								$( nRow ).hide().find( "th:first" ).html( "" );
+							}
+						}
 					}
 				} ).fnSetFilteringDelay( searchDelay );
+
+				$listingTable.on( "xhr", function( event, settings, json ){
+					lastAjaxResult = json;
+				} );
 			};
 
 			setupCheckboxBehaviour = function(){
 				var $selectAllCBox   = $listingTable.find( "th input:checkbox" )
-				  , $multiActionBtns = $( "#multi-action-buttons" );
+				  , $multiActionBtns = $listingTable.closest( '.multi-action-form' ).find( ".multi-action-buttons" );
 
 				$selectAllCBox.on( 'click' , function(){
 					var $allCBoxes = $listingTable.find( 'tr > td:first-child input:checkbox' );
@@ -273,10 +287,10 @@
 			};
 
 			setupMultiActionButtons = function(){
-				var $form              = $( '#multi-action-form' )
+				var $form              = $listingTable.closest( '.multi-action-form' )
 				  , $hiddenActionField = $form.find( '[name=multiAction]' );
 
-				$( "#multi-action-buttons button" ).click( function( e ){
+				$form.find( ".multi-action-buttons button" ).click( function( e ){
 					$hiddenActionField.val( $( this ).attr( 'name' ) );
 				} );
 			};
@@ -389,8 +403,11 @@
 					var $configForm      = $( configIframe.document ).find( ".export-config-form" )
 					  , $submissionForm  = $( ".object-listing-table-export-form" )
 					  , $searchContainer = $( dtSettings.aanFeatures.f[0] )
+					  , sortColumns      = dtSettings.aaSorting
+					  , allColumns       = dtSettings.aoColumns
 					  , config           = $configForm.serializeObject()
-					  , favourites, key, $hiddenInput;
+					  , sortOrder        = []
+					  , favourites, key, $hiddenInput, i;
 
 					if ( allowFilter ) {
 						config.filterExpressions = $filterDiv.find( "[name=filter]" ).val();
@@ -414,6 +431,15 @@
 						}
 
 						$hiddenInput.val( config[ key ] );
+					}
+
+					for( i=0; i<sortColumns.length; i++ ) {
+						sortOrder.push( allColumns[ sortColumns[ i ][ 0 ] ].mData + " " + sortColumns[ i ][ 1 ] );
+					}
+					if ( sortOrder.length ) {
+						$hiddenInput = $( '<input type="hidden" name="orderby">' );
+						$hiddenInput.val( sortOrder.join( "," ) );
+						$submissionForm.append( $hiddenInput );
 					}
 
 					$submissionForm.submit();
@@ -514,6 +540,7 @@
 				$filterDiv.fadeOut( 100, function(){
 					$filterDiv.find( "[name=filter]" ).data( "conditionBuilder" ).clear();
 					$filterDiv.find( "[name=filters]" ).data( "uberSelect").clear();
+					$filterDiv.find( "[name=filters]" ).val("");
 					refreshFavourites();
 					datatable.fnDraw();
 					$searchContainer.fadeIn( 100 );
@@ -529,7 +556,7 @@
 					  , modalTitle          = i18n.translateResource( "cms:rulesEngine.save.filter.modal" )
 					  , modalOptions        = {
 							title     : modalTitle,
-							className : "filter-quick-save-modal",
+							className : $( this ).data( "modalDialogFull" ) ? "full-screen-dialog" : "filter-quick-save-modal",
 							buttons   : {
 								cancel : {
 									  label     : '<i class="fa fa-reply"></i> ' + i18n.translateResource( "cms:cancel.btn" )

@@ -4,6 +4,7 @@ component extends="coldbox.system.Interceptor" {
 	property name="delayedViewletRendererService" inject="delayedInjector:delayedViewletRendererService";
 	property name="delayedStickerRendererService" inject="delayedInjector:delayedStickerRendererService";
 	property name="loginService"                  inject="delayedInjector:websiteLoginService";
+	property name="websiteUserActionService"      inject="delayedInjector:websiteUserActionService";
 
 // PUBLIC
 	public void function configure() {}
@@ -16,23 +17,48 @@ component extends="coldbox.system.Interceptor" {
 			if ( !IsNull( local.cached ) ) {
 				event.restoreCachedData( cached.data ?: {} );
 				event.checkPageAccess();
+				event.setXFrameOptionsHeader();
+				event.setHTTPHeader( name="X-Cache", value="HIT" );
 				var viewletsRendered = delayedViewletRendererService.renderDelayedViewlets( cached.body ?: "" );
+				var contentType      = cached.contentType ?: "";
+				var pageId           = event.getCurrentPageId();
+
+				if ( Len( Trim( pageId ) ) ) {
+					websiteUserActionService.recordAction(
+						  action     = "pagevisit"
+						, type       = "request"
+						, identifier = pageId
+						, userId     = getLoggedInUserId()
+					);
+				}
+
 				content reset=true;
+				if ( len( contentType ) ) {
+					content type=contentType;
+				}
 				echo( delayedStickerRendererService.renderDelayedStickerIncludes( viewletsRendered ) );
 				abort;
 			}
 		}
+
+		event.setNonCacheableRequestData();
 	}
 
 	public void function preRender( event, interceptData ) {
-		var content = interceptData.renderedContent ?: "";
+		var content     = interceptData.renderedContent ?: "";
+		var contentType = interceptData.contentType     ?: "";
 
 		if ( event.cachePage() ) {
 			cache.set(
 				  objectKey = _getCacheKey( event )
-				, object    = { body=content, data=event.getCacheableRequestData() }
+				, object    = {
+					  body        = content
+					, data        = event.getCacheableRequestData()
+					, contentType = contentType
+				  }
 				, timeout   = event.getPageCacheTimeout()
 			);
+			event.setHTTPHeader( name="X-Cache", value="MISS" );
 		}
 
 		var viewletsRendered          = delayedViewletRendererService.renderDelayedViewlets( content );
@@ -56,8 +82,9 @@ component extends="coldbox.system.Interceptor" {
 	private string function _getCacheKey( event ) {
 		var isLoggedIn = loginService.get().isLoggedIn();
 		var fullUrl    = event.getBaseUrl() & event.getCurrentUrl();
+		var isAjax     = event.isAjax();
 
-		return "pagecache" & fullUrl & ( isLoggedIn ? "$loggedin" : "" );
+		return "pagecache" & fullUrl & ( isLoggedIn ? "$loggedin" : "" ) & ( isAjax ? "$ajax" : "" );
 	}
 
 	private void function _clearCaches( event, interceptData ) {

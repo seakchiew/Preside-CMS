@@ -70,6 +70,8 @@ component accessors="true" serializable="false" singleton="true" extends="coldbo
 		variables.cacheBox = arguments.controller.getCacheBox();
 		// Register WireBox
 		variables.wireBox = arguments.controller.getWireBox();
+		// Register thread utils
+		variables.threadUtil = wirebox.getInstance( "threadUtil" );
 
 		// Set Conventions, Settings and Properties
 		variables.layoutsConvention 		= variables.controller.getSetting( "layoutsConvention", true );
@@ -124,7 +126,7 @@ component accessors="true" serializable="false" singleton="true" extends="coldbo
 	*/
 	function renderView(
 		view="",
-		struct args="#getRequestContext().getCurrentViewArgs()#",
+		struct args=getRequestContext().getCurrentViewArgs(),
 		module="",
 		boolean cache=false,
 		cacheTimeout="",
@@ -290,6 +292,10 @@ component accessors="true" serializable="false" singleton="true" extends="coldbo
 		// Array Rendering
 		if( isArray( arguments.collection ) ){
 			recLen = arrayLen( arguments.collection );
+			// adjust item count for collectionStartRow
+			if ( arguments.collectionStartRow > 1 ) {
+				recLen = max( 0, recLen - arguments.collectionStartRow + 1 );
+			}
 			// is max rows passed?
 			if( arguments.collectionMaxRows NEQ 0 AND arguments.collectionMaxRows LTE recLen ){ recLen = arguments.collectionMaxRows; }
 			// Create local marker
@@ -311,6 +317,10 @@ component accessors="true" serializable="false" singleton="true" extends="coldbo
 
 		// Query Rendering
 		viewArgs._items = arguments.collection.recordCount;
+		// Adjust item count for collectionStartRow
+		if ( arguments.collectionStartRow > 1 ) {
+			viewArgs._items = max( 0, viewArgs._items - arguments.collectionStartRow + 1 );
+		}
 		// Max Rows
 		if( arguments.collectionMaxRows NEQ 0 AND arguments.collectionMaxRows LTE arguments.collection.recordCount){
 			viewArgs._items = arguments.collectionMaxRows;
@@ -549,7 +559,7 @@ component accessors="true" serializable="false" singleton="true" extends="coldbo
 		var layoutPath       = "";
 		var moduleLayoutPath = "";
 
-		if ( len( moduleName ) && variables.modulesConfig.keyExists( moduleName ) ){
+		if ( len( moduleName ) && StructKeyExists( variables.modulesConfig, moduleName ) ){
 			moduleLayoutPath = "#variables.modulesConfig[moduleName].mapping#/#layoutsConvention#/#arguments.layout#";
 			if ( FileExists( ExpandPath( moduleLayoutPath ) ) ) {
 				return moduleLayoutPath;
@@ -592,7 +602,7 @@ component accessors="true" serializable="false" singleton="true" extends="coldbo
 		parentModuleLayoutPath 	= "/#variables.appMapping#/#variables.layoutsConvention#/modules/#moduleName#/#arguments.layout#";
 		parentCommonLayoutPath 	= "/#variables.appMapping#/#variables.layoutsConvention#/modules/#arguments.layout#";
 
-		if ( variables.modulesConfig.keyExists( moduleName ) ) {
+		if ( StructKeyExists( variables.modulesConfig, moduleName ) ) {
 			moduleLayoutPath = "#variables.modulesConfig[ moduleName ].mapping#/#variables.modulesConfig[ moduleName ].conventions.layoutsLocation#/#arguments.layout#";
 
 			// Check parent view order setup
@@ -668,7 +678,7 @@ component accessors="true" serializable="false" singleton="true" extends="coldbo
 		parentModuleViewPath = "/#variables.appMapping#/#variables.viewsConvention#/modules/#moduleName#/#arguments.view#";
 		parentCommonViewPath = "/#variables.appMapping#/#variables.viewsConvention#/modules/#arguments.view#";
 
-		if ( variables.modulesConfig.keyExists( moduleName ) ) {
+		if ( StructKeyExists( variables.modulesConfig, moduleName ) ) {
 			moduleViewPath = "#variables.modulesConfig[ moduleName ].mapping#/#variables.modulesConfig[ moduleName ].conventions.viewsLocation#/#arguments.view#";
 
 			// Check parent view order setup

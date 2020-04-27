@@ -1,5 +1,6 @@
 <cfscript>
 	object                  = args.object           ?: "";
+	objectTitle             = translateResource( "preside-objects.#object#:title.singular" );
 	inputName               = args.name             ?: "";
 	inputId                 = args.id               ?: "";
 	inputClass              = args.class            ?: "";
@@ -26,6 +27,9 @@
 	quickAddUrl             = args.quickAddUrl      ?: event.buildAdminLink( linkTo="datamanager.quickAddForm", querystring="object=#object#&multiple=#IsTrue( multiple )#" );
 	quickAddModalTitle      = translateResource( args.quickAddModalTitle ?: "cms:datamanager.quick.add.modal.title" );
 	quickEdit               = args.quickEdit                             ?: false;
+	superQuickAdd           = IsTrue( args.superQuickAdd ?: false );
+	superQuickAddUrl        = args.superQuickAddUrl ?: event.buildAdminLink( linkTo="datamanager.superQuickAddAction", querystring="object=#object#" );
+	superQuickAddText       = args.superQuickAddText ?: translateResource( uri="cms:datamanager.super.quick.add.text", data=[ objectTitle ] );
 	removeObjectPickerClass = args.removeObjectPickerClass               ?: false;
 	objectPickerClass       = removeObjectPickerClass                    ?  "" : "object-picker" ;
 
@@ -66,10 +70,14 @@
 	if ( !deselectable ) {
 		extraClasses = ListAppend( extraClasses, "non-deselectable", " " );
 	}
+	if ( superQuickAdd ) {
+		extraClasses = ListAppend( extraClasses, "super-quick-add", " " );
+	}
 
 	filterBy             = args.filterBy             ?: "";
 	filterByField        = args.filterByField        ?: filterBy;
 	disabledIfUnfiltered = args.disabledIfUnfiltered ?: false;
+	includePlaceholder   = args.includePlaceholder   ?: true;
 </cfscript>
 
 <cfoutput>
@@ -122,9 +130,15 @@
 				data-quick-edit-url="#quickEditUrl#"
 				data-quick-edit-modal-title="#quickEditModalTitle#"
 			</cfif>
+			<cfif superQuickAdd>
+				data-super-quick-add-url="#superQuickAddUrl#"
+				data-quick-add-text="#superQuickAddText#"
+			</cfif>
 	>
 		<cfif !IsBoolean( ajax ) || !ajax>
-			<option>#HtmlEditFormat( translateResource( "cms:option.pleaseselect", "" ) )#</option>
+			<cfif includePlaceholder>
+				<option value="">#HtmlEditFormat( translateResource( "cms:option.pleaseselect", "" ) )#</option>
+			</cfif>
 			<cfloop query="records">
 				<cfset labelArgs=queryRowToStruct( records, records.currentRow ) />
 				<cfset labelArgs.labelRenderer = labelRenderer />

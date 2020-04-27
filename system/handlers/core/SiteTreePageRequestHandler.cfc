@@ -1,9 +1,6 @@
 component {
 
 	property name="pageTypesService"              inject="pageTypesService";
-	property name="presideObjectService"          inject="presideObjectService";
-	property name="websitePermissionService"      inject="websitePermissionService";
-	property name="websiteLoginService"           inject="websiteLoginService";
 	property name="websiteUserActionService"      inject="websiteUserActionService";
 	property name="delayedViewletRendererService" inject="delayedViewletRendererService";
 
@@ -54,7 +51,7 @@ component {
 				if ( layout != "index" ) {
 					 viewlet = viewlet.reReplaceNoCase( "index$", layout );
 				}
-			} else {
+			} else if ( getController().viewletExists( viewlet & "." & layout ) ) {
 				viewlet = viewlet & "." & layout;
 			}
 		}

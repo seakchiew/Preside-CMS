@@ -24,6 +24,7 @@ component {
 			, allowedIps     = arguments.allowedIps
 			, bypassPassword = arguments.bypassPassword
 			, tasksEnabled   = arguments.tasksEnabled
+			, bypassUuid     = createUUID()
 		};
 
 		_setApplicationVariable( settings );
@@ -66,9 +67,14 @@ component {
 		var settings       = getMaintenanceModeSettings();
 		var safeIps        = settings.allowedIps ?: [];
 		var bypassPassword = settings.bypassPassword;
+		var bypassUuid     = settings.bypassUuid ?: "";
 		var clientIp       = cgi.remote_addr;
 
 		if ( IsArray( safeIps ) && safeIps.find( clientIp ) ) {
+			return true;
+		}
+
+		if ( bypassUuid.len() && bypassUuid == ( url.heartbeatBypass ?: "" ) ) {
 			return true;
 		}
 
@@ -76,7 +82,7 @@ component {
 			var scopes = [ session, cookie, form, url ];
 
 			for( var scope in scopes ){
-				if ( scope.keyExists( bypassPassword ) ) {
+				if ( StructKeyExists( scope, bypassPassword ) ) {
 					session[ bypassPassword ] = true;
 					return true;
 				}

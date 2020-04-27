@@ -29,6 +29,7 @@ component displayName="Preside Super Class" {
 	 * @i18n.inject                       delayedInjector:i18n
 	 * @htmlHelper.inject                 delayedInjector:HTMLHelper@coldbox
 	 * @healthcheckService.inject         delayedInjector:healthcheckService
+	 * @presideHelperClass.inject         presideHelperClass
 	 *
 	 */
 	public any function init(
@@ -53,6 +54,7 @@ component displayName="Preside Super Class" {
 		, required any i18n
 		, required any htmlHelper
 		, required any healthcheckService
+		, required any presideHelperClass
 	) {
 		$presideObjectService       = arguments.presideObjectService;
 		$systemConfigurationService = arguments.systemConfigurationService;
@@ -75,6 +77,8 @@ component displayName="Preside Super Class" {
 		$i18n                       = arguments.i18n;
 		$htmlHelper                 = arguments.htmlHelper;
 		$healthcheckService         = arguments.healthcheckService;
+
+		this.$helpers = arguments.presideHelperClass;
 
 		return this;
 	}
@@ -749,7 +753,10 @@ component displayName="Preside Super Class" {
 	 * ```
 	 */
 	public string function $getI18nLocale() {
-		return $i18n.getFWLanguageCode() & "-" & $i18n.getFWCountryCode();
+		if ( len( $i18n.getFWCountryCode() ) ) {
+			return $i18n.getFWLanguageCode() & "_" & $i18n.getFWCountryCode();
+		}
+		return $i18n.getFWLanguageCode();
 	}
 
 	/**
@@ -767,6 +774,23 @@ component displayName="Preside Super Class" {
 	 */
 	public any function $renderViewlet() {
 		return $getColdbox().renderViewlet( argumentCollection=arguments );
+	}
+
+	/**
+	 * Proxy to the core coldbox 'runEvent' method.
+	 * \n
+	 * ## Example
+	 * \n
+	 * ```luceescript
+	 * var result = $runEvent( event="my.viewlet", eventArguments={ args=someData }, private=true, prePostExempt=true );
+	 *
+	 * ```
+	 *
+	 * @autodoc
+	 *
+	 */
+	public any function $runEvent() {
+		return $getColdbox().runEvent( argumentCollection=arguments );
 	}
 
 	/**
@@ -826,10 +850,28 @@ component displayName="Preside Super Class" {
 	 * // Will return "my-site-about-us"
 	 * ```
 	 *
-	 * @autodoc
+	 * @autodoc           true
+	 * @str.hint          The String to 'slugify'
+	 * @maxLength.hint    Max length of the resultant string. Will be trimmed to this length if longer.
+	 * @allow.hint        A regex safe list of additional characters to allow
+	 * @preserveCase.hint Whether or not to allow mixed case. If false, default, the slug will be all lowercase.
 	 */
-	public string function $slugify() {
-		return $htmlHelper.slugify( argumentCollection=arguments );
+	public string function $slugify( required str, numeric maxLength=0, allow="", preserveCase=false ) {
+		var slug = Trim( arguments.str );
+
+		if ( !preserveCase ) {
+			slug = LCase( slug );
+		}
+		slug = ReplaceList( slug, '#chr(228)#,#chr(252)#,#chr(246)#,#chr(223)#', 'ae,ue,oe,ss' );
+		slug = ReReplace( slug, "[^a-zA-Z0-9-\s#arguments.allow#]", "", "all" );
+		slug = Trim( ReReplace( slug, "[\s-]+", " ", "all" ) );
+		slug = ReReplace( slug, "\s", "-", "all" );
+
+		if ( arguments.maxlength ) {
+			slug = left( slug, arguments.maxlength );
+		}
+
+		return slug;
 	}
 
 	/**
@@ -867,8 +909,18 @@ component displayName="Preside Super Class" {
 	 * @autodoc true
 	 * @message The message to send to the console/log
 	 */
-	public void function $systemOutput( required string message ) {
-		systemOutput( "Preside System Output [#DateTimeFormat( Now(), 'yyyy-mm-dd HH:nn:ss' )#]: #message#" );
+	public void function $systemOutput( required string message, string appId=$getApplicationId() ) {
+		SystemOutput( "Preside System Output (#arguments.appId#) [#DateTimeFormat( Now(), 'yyyy-mm-dd HH:nn:ss' )#]: #message#" & Chr( 13 ) & Chr( 10 ) );
+	}
+
+	/**
+	 * Returns the ID of the current Application.
+	 *
+	 * @autodoc true
+	 */
+	public string function $getApplicationId() {
+		var appSettings = getApplicationMetadata();
+		return appSettings.PRESIDE_APPLICATION_ID ?: ( appSettings.name ?: "" );
 	}
 
 

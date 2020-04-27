@@ -64,7 +64,7 @@ component extends="coldbox.system.Bootstrap" {
 			var eCacheEntry	 = event.getEventCacheableEntry();
 
 			// Verify if event caching item is in selected cache
-			if( eCacheEntry.keyExists( "cachekey" ) ){
+			if( StructKeyExists( eCacheEntry, "cachekey" ) ){
 				// Get cache element.
 				refResults.eventCaching = cacheBox
 					.getCache( eCacheEntry.provider )
@@ -139,7 +139,8 @@ component extends="coldbox.system.Bootstrap" {
 
 					//****** PRE-RENDER EVENTS *******/
 					var interceptorData = {
-						renderedContent = renderedContent
+						  renderedContent = renderedContent
+						, contentType     = renderData.contentType ?: ""
 					};
 					interceptorService.processState( "preRender", interceptorData );
 					// replace back content in case of modification, strings passed by value
@@ -148,13 +149,13 @@ component extends="coldbox.system.Bootstrap" {
 					//****** EVENT CACHING *******/
 					var eCacheEntry = event.getEventCacheableEntry();
 					if(
-						eCacheEntry.keyExists( "cacheKey" ) AND
+						StructKeyExists( eCacheEntry, "cacheKey" ) AND
 						getPageContextResponse().getStatus() neq 500 AND
 						(
 							renderData.isEmpty()
 							OR
 							(
-								renderData.keyExists( "statusCode" ) and
+								StructKeyExists( renderData, "statusCode" ) and
 								renderdata.statusCode neq 500
 							)
 						)
@@ -231,7 +232,7 @@ component extends="coldbox.system.Bootstrap" {
 			}
 
 		} catch( Any e ) {
-			var defaultShowErrorsSetting = IsBoolean( application.injectedConfig.showErrors ?: "" ) && application.injectedConfig.showErrors;
+			var defaultShowErrorsSetting = IsBoolean( application.env.showErrors ?: "" ) && application.env.showErrors;
 			var showErrors               = cbController.getSetting( name="showErrors", defaultValue=defaultShowErrorsSetting );
 
 			if ( !IsBoolean( showErrors ) || !showErrors ) {

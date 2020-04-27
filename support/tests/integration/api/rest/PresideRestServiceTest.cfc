@@ -62,7 +62,7 @@ component extends="testbox.system.BaseSpec"{
 
 				var log = restService.$callLog()._announceInterception;
 				expect( log.len() > 0 ).toBe( true );
-				expect( log[1] ).toBe([ "onRestRequest", { restRequest=restRequest, restResponse=restResponse } ]);
+				expect( log[2] ).toBe([ "onRestRequest", { restRequest=restRequest, restResponse=restResponse } ]);
 			} );
 
 			it( "it should call processRequest to handle the request", function(){
@@ -123,6 +123,45 @@ component extends="testbox.system.BaseSpec"{
 				expect( callLog[1].restRequest ).toBe( restRequest );
 				expect( callLog[1].restResponse ).toBe( restResponse );
 				expect( callLog[1].requestContext.getInstanceIdForComparison() ).toBe( mockRequestContext.getInstanceIdForComparison() );
+			} );
+
+			it( "should authenticate requests", function(){
+				var restService        = getService();
+				var restResponse       = getRestResponse();
+				var restRequest        = getRestRequest();
+				var mockRequestContext = getMockRequestContext();
+
+				restService.$( "createRestResponse", restResponse );
+				restService.$( "createRestRequest" , restRequest  );
+				restService.$( "processRequest"  );
+				restService.$( "processResponse" );
+
+				restService.onRestRequest( "/blah", mockRequestContext );
+
+				var callLog = restService.$callLog().authenticateRequest;
+
+				expect( callLog.len() ).toBe( 1 );
+				expect( callLog[1].restRequest ).toBe( restRequest );
+				expect( callLog[1].restResponse ).toBe( restResponse );
+				expect( callLog[1].requestContext.getInstanceIdForComparison() ).toBe( mockRequestContext.getInstanceIdForComparison() );
+			} );
+
+			it( "should NOT authenticate OPTIONS requests", function(){
+				var restService        = getService();
+				var restResponse       = getRestResponse();
+				var restRequest        = getRestRequest( verb="OPTIONS" );
+				var mockRequestContext = getMockRequestContext();
+
+				restService.$( "createRestResponse", restResponse );
+				restService.$( "createRestRequest" , restRequest  );
+				restService.$( "processRequest"  );
+				restService.$( "processResponse" );
+
+				restService.onRestRequest( "/blah", mockRequestContext );
+
+				var callLog = restService.$callLog().authenticateRequest;
+
+				expect( callLog.len() ).toBe( 0 );
 			} );
 
 
@@ -1146,22 +1185,25 @@ component extends="testbox.system.BaseSpec"{
 		variables.mockValidationEngine = createMock( "preside.system.services.validation.ValidationEngine" ).init();
 		variables.mockI18n = createMock( "preside.system.services.i18n.i18n" );
 
-		var restService = createMock( object=new preside.system.services.rest.PresideRestService(
-			  controller           = mockController
-			, resourceDirectories  = [ "/resources/rest/dir1", "/resources/rest/dir2" ]
-			, configurationWrapper = mockConfigWrapper
-			, authService          = mockAuthService
-			, validationEngine 	   = mockValidationEngine
-			, i18n 				   = mockI18n
-		) );
+		var restService = createMock( "preside.system.services.rest.PresideRestService" );
 
 		restService.$( "_announceInterception" );
+		restService.$( "$announceInterception" );
 		restService.$( "$raiseError" );
 		restService.$( "authenticateRequest" );
 		restService.$( "$getRequestContext", mockRequestContext );
 		mockRequestContext.$( "cachePage" );
 		mockRequestContext.$( "setRestResponse" );
 		mockRequestContext.$( "setRestRequest" );
+
+		restService.init(
+			  controller           = mockController
+			, resourceDirectories  = [ "/resources/rest/dir1", "/resources/rest/dir2" ]
+			, configurationWrapper = mockConfigWrapper
+			, authService          = mockAuthService
+			, validationEngine 	   = mockValidationEngine
+			, i18n 				   = mockI18n
+		);
 
 		return restService;
 	}

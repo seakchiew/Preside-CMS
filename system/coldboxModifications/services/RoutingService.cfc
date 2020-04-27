@@ -20,8 +20,11 @@ component extends="coldbox.system.web.services.RoutingService" accessors=true {
 	}
 
 	public void function onRequestCapture( event, interceptData ) {
+		_announceInterception( "prePresideRequestCapture", interceptData );
 		_checkRedirectDomains( argumentCollection=arguments );
-		_detectIncomingSite  ( argumentCollection=arguments );
+		if ( featureService.isFeatureEnabled( "sites" ) ) {
+			_detectIncomingSite( argumentCollection=arguments );
+		}
 		_setCustomTenants    ( argumentCollection=arguments );
 		_checkUrlRedirects   ( argumentCollection=arguments );
 		_detectLanguage      ( argumentCollection=arguments );
@@ -30,12 +33,16 @@ component extends="coldbox.system.web.services.RoutingService" accessors=true {
 		if ( !_routePresideSESRequest( argumentCollection=arguments ) ) {
 			super.onRequestCapture( argumentCollection=arguments );
 		}
+
+		event.setXFrameOptionsHeader();
+
+		_announceInterception( "postPresideRequestCapture", interceptData );
 	}
 
 	public void function onBuildLink( event, interceptData ) {
 		for( var route in _getPresideRoutes() ){
-			if ( route.reverseMatch( buildArgs=interceptData, event=event ) ) {
-				event.setValue( name="_builtLink", value=route.build( buildArgs=interceptData, event=event ), private=true );
+			if ( route.get().reverseMatch( buildArgs=interceptData, event=event ) ) {
+				event.setValue( name="_builtLink", value=route.get().build( buildArgs=interceptData, event=event ), private=true );
 				return;
 			}
 		}
@@ -95,7 +102,11 @@ component extends="coldbox.system.web.services.RoutingService" accessors=true {
 			}
 		}
 
-		event.setSite( site );
+		interceptData.site = site;
+
+		_announceInterception( "onPresideDetectIncomingSite", interceptData );
+
+		event.setSite( interceptData.site );
 	}
 
 	private void function _setCustomTenants() {
@@ -114,6 +125,10 @@ component extends="coldbox.system.web.services.RoutingService" accessors=true {
 
 			var localeSlug = Trim( ListFirst( path, "/" ) );
 			var language   = multilingualPresideObjectService.getDetectedRequestLanguage( localeSlug=localeSlug );
+
+			interceptData.language = language;
+			_announceInterception( "onPresideDetectLanguage", interceptData );
+			language = interceptData.language ?: QueryNew( "" );
 
 			if ( language.recordCount ) {
 				event.setLanguage( language.id );
@@ -175,6 +190,8 @@ component extends="coldbox.system.web.services.RoutingService" accessors=true {
 	}
 
 	private boolean function _routePresideSESRequest( event, interceptData ) {
+		_announceInterception( "preRoutePresideSESRequest", interceptData );
+
 		var path = event.getCurrentPresideUrlPath();
 
 		for( var route in _getPresideRoutes() ){
@@ -183,9 +200,13 @@ component extends="coldbox.system.web.services.RoutingService" accessors=true {
 
 				_setEventName( event );
 
+				_announceInterception( "postRoutePresideSESRequest", interceptData );
+
 				return true;
 			}
 		}
+
+		_announceInterception( "postRoutePresideSESRequest", interceptData );
 
 		return false;
 	}
@@ -210,29 +231,54 @@ component extends="coldbox.system.web.services.RoutingService" accessors=true {
 			return;
 		}
 
-		var path    = event.getCurrentUrl( includeQueryString=true );
-		var fullUrl = event.getSiteUrl() & path;
+		interceptData.path    = event.getCurrentUrl( includeQueryString=true );
+		interceptData.fullUrl = event.getSiteUrl() & interceptData.path;
+
+
+		_announceInterception( "onPresideUrlRedirects", interceptData );
 
 		urlRedirectsService.redirectOnMatch(
-			  path    = path
-			, fullUrl = fullUrl
+			  path    = interceptData.path
+			, fullUrl = interceptData.fullUrl
 		);
 	}
 
 	private void function _checkRedirectDomains( event, interceptData ) {
-		var domain       = _getCGIElement( "server_name", event );
-		var redirectSite = siteService.getRedirectSiteForDomain( domain );
+		var domain = LCase( _getCGIElement( "server_name", event ) );
+		var redirectUrl = "";
 
-		if ( redirectSite.recordCount && redirectSite.domain != domain ) {
-			var path        = _getCGIElement( 'path_info', event );
-			var qs          = _getCGIElement( 'query_string', event );
-			var redirectUrl = redirectSite.protocol & "://" & redirectSite.domain & path;
+		if ( featureService.isFeatureEnabled( "sites" ) ) {
+			var redirectSite = siteService.getRedirectSiteForDomain( domain );
 
+			if ( redirectSite.recordCount && redirectSite.domain != domain ) {
+				redirectUrl = redirectSite.protocol & "://" & redirectSite.domain;
+				interceptData.redirectFromSite = redirectSite;
+			}
+		} else {
+			var allowedDomains = controller.getSetting( "allowedDomains" );
+			var allowed = !allowedDomains.len() || allowedDomains.find( domain );
+
+			if ( !allowed ) {
+				redirectUrl = controller.getSetting( "forcessl" ) ? "https" : ( ( cgi.https ?: "" ) == "on" ? "https" : "http" );
+				redirectUrl &= "://" & allowedDomains[ 1 ];
+			}
+		}
+
+		if ( redirectUrl.len() ) {
+			var path = _getCGIElement( 'path_info', event );
+			var qs   = _getCGIElement( 'query_string', event );
+			redirectUrl &= path;
 			if ( Len( Trim( qs ) ) ) {
 				redirectUrl &= "?" & qs;
 			}
-			getController().relocate( url=redirectUrl, statusCode=301 );
+			interceptData.redirectFromDomain = domain;
+			interceptData.redirectUrl = redirectUrl;
+
+			_announceInterception( "onPresideRedirectDomains", interceptData );
+
+			getController().relocate( url=interceptData.redirectUrl , statusCode=301 );
 		}
+
 	}
 
 	private boolean function _isNonSiteSpecificRequest( required string pathInfo, required any event ) {
@@ -243,7 +289,7 @@ component extends="coldbox.system.web.services.RoutingService" accessors=true {
 	}
 
 	private array function _getPresideRoutes() {
-		if ( !variables.keyExists( "_presideRoutes" ) ) {
+		if ( !StructKeyExists( variables, "_presideRoutes" ) ) {
 			var presideRoutes = controller.getSetting( "presideRoutes" );
 			if ( IsArray( presideRoutes ) && presideRoutes.len() ) {
 				variables._presideRoutes = presideRoutes;
@@ -264,5 +310,9 @@ component extends="coldbox.system.web.services.RoutingService" accessors=true {
 			return variables.router.pathInfoProvider( event=arguments.event );
 		}
 		return CGI[ arguments.CGIElement ];
+	}
+
+	private void function _announceInterception() {
+	    return variables.controller.getInterceptorService().processState( argumentCollection=arguments );
 	}
 }

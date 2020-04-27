@@ -69,7 +69,13 @@ component displayName="Email service" {
 		, boolean overwriteTemplateArgs = false
 		, boolean isTest                = false
 	) autodoc=true {
+
 		var hasTemplate = Len( Trim( arguments.template ) );
+
+		if ( hasTemplate ) {
+			_getEmailTemplateService().enableDomainOverwriteForBuildLink( template=_getEmailTemplateService().getTemplate( id=arguments.template ) );
+		}
+
 		var sendArgs    = hasTemplate ? _mergeArgumentsWithTemplateHandlerResult( argumentCollection=arguments ) : arguments;
 		    sendArgs    = _addDefaultsForMissingArguments( sendArgs );
 
@@ -78,11 +84,22 @@ component displayName="Email service" {
 		sendArgs.args = arguments.args;
 		sendArgs.args.template = sendArgs.template = arguments.template;
 
-		return _getEmailServiceProviderService().sendWithProvider(
+		var interceptArgs = { sendArgs=sendArgs };
+		$announceInterception( "onPrepareEmailSendArguments", { sendArgs=sendArgs } );
+
+		sendArgs.htmlBody = rereplace( sendArgs.htmlBody, "([^\r\n]{200})\s", "\1#chr(10)#", "all" );
+
+		var result = _getEmailServiceProviderService().sendWithProvider(
 			  provider = _getEmailServiceProviderService().getProviderForTemplate( arguments.template )
-			, sendArgs = sendArgs
+			, sendArgs = interceptArgs.sendArgs
 			, logSend  = !arguments.isTest
 		);
+
+		if ( hasTemplate ) {
+			_getEmailTemplateService().disableDomainOverwriteForBuildLink();
+		}
+
+		return result;
 	}
 
 	/**
@@ -139,7 +156,7 @@ component displayName="Email service" {
 			dir   = ExpandPath( dir );
 			files = DirectoryList( dir, true, "path", "*.cfc" );
 
-			for( file in files ){
+			for( var file in files ){
 				var templateName = ReplaceNoCase( file, dir, "" );
 				    templateName = ReReplace( templateName, "\.cfc$", "" );
 				    templateName = ListChangeDelims( templateName, ".", "\/" );

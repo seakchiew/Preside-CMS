@@ -56,6 +56,10 @@ component {
 			event.notFound();
 		}
 
+		if ( !ReFindNoCase( "^https?://", link ) && !ReFindNoCase( "^/", link ) ) {
+			event.notFound();
+		}
+
 		if ( messageId.len() && !ReFindNoCase( ignoreLinkPattern, link ) ) {
 			try {
 				emailLoggingService.recordClick( id=messageId, link=link );

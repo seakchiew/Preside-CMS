@@ -16,7 +16,8 @@ component {
 	) {
 		var tmpFile       = getTempFile( getTempDirectory(), "ExcelExport" );
 		var workbook      = spreadsheetLib.new( xmlformat=true );
-		var headers       = [];
+		var data          = [];
+		var dataCols      = [];
 		var row           = 1;
 		var col           = 0;
 		var objectUriRoot = presideObjectService.getResourceBundleUriRoot( arguments.objectName );
@@ -46,7 +47,7 @@ component {
 
 		spreadsheetLib.formatRow( workbook, { bold=true }, 1 );
 		spreadsheetLib.addFreezePane( workbook, 0, 1 );
-		for( var i=1; i <= headers.len(); i++ ){
+		for( var i=1; i <= dataCols.len(); i++ ){
 			spreadsheetLib.autoSizeColumn( workbook, i );
 		}
 

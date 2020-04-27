@@ -81,7 +81,7 @@
 <!--- FORMS --->
 	<cffunction name="renderForm" access="public" returntype="any" output="false">
 		<cfscript>
-			if ( !arguments.keyExists( "validationJsJqueryRef" ) ) {
+			if ( !StructKeyExists( arguments, "validationJsJqueryRef" ) ) {
 				var event = getController().getRequestContext();
 
 				arguments.validationJsJqueryRef = event.isAdminRequest() ? "presideJQuery" : "jQuery";
@@ -100,6 +100,7 @@
 	</cffunction>
 
 	<cffunction name="validateForms" access="public" returntype="any" output="false">
+		<cfargument name="formData" type="struct" default="#getController().getRequestContext().getCollection()#" />
 		<cfscript>
 			var formsService     = getSingleton( "formsService" );
 			var validationResult = getSingleton( "validationEngine" ).newValidationResult();
@@ -107,12 +108,11 @@
 			var formNames        = event.getSubmittedPresideForms();
 
 			for( var formName in formNames ) {
-				var formData = event.getCollectionForForm( formName );
 
 				validationResult = formsService.validateForm(
 					  argumentCollection = arguments
 					, formName           = formName
-					, formData           = formData
+					, formData           = arguments.formData
 					, validationResult   = validationResult
 				);
 			}
@@ -214,6 +214,10 @@
 		<cfreturn getSingleton( "permissionService" ).hasPermission( argumentCollection=arguments ) />
 	</cffunction>
 
+	<cffunction name="hasCmsPermissions" access="public" returntype="struct" output="false">
+		<cfreturn getSingleton( "permissionService" ).hasPermissions( argumentCollection=arguments ) />
+	</cffunction>
+
 	<cffunction name="hasWebsitePermission" access="public" returntype="boolean" output="false">
 		<cfreturn getSingleton( "websitePermissionService" ).hasPermission( argumentCollection=arguments ) />
 	</cffunction>
@@ -299,7 +303,7 @@
 		<cfscript>
 			request._simpleRequestCache = request._simpleRequestCache ?: {};
 
-			if ( !request._simpleRequestCache.keyExists( arguments.key ) ) {
+			if ( !StructKeyExists( request._simpleRequestCache, arguments.key ) ) {
 				request._simpleRequestCache[ arguments.key ] = arguments.generator();
 			}
 

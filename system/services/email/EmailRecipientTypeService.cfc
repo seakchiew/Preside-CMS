@@ -67,7 +67,7 @@ component displayName="Email Recipient Type Service" {
 	 *
 	 */
 	public boolean function recipientTypeExists( required string recipientType ) {
-		return _getConfiguredRecipientTypes().keyExists( arguments.recipientType );
+		return StructKeyExists( _getConfiguredRecipientTypes(), arguments.recipientType );
 	}
 
 	/**
@@ -195,6 +195,45 @@ component displayName="Email Recipient Type Service" {
 		}
 
 		return "";
+	}
+
+	/**
+	 * Returns and unsubscribe link for the given recipient and template ID
+	 *
+	 * @autodoc            true
+	 * @recipientType.hint The ID of the recipient type whose link we will get
+	 * @recipientId.hint   ID of the recipient of the email
+	 * @templateId.hint    ID of the email template
+	 */
+	public string function getUnsubscribeLink(
+		  required string recipientType
+		, required string recipientId
+		, required string templateId
+	) {
+		var handlerAction = "email.recipientType.#recipientType#.getUnsubscribeLink";
+
+		if ( recipientTypeExists( arguments.recipientType ) && $getColdbox().handlerExists( handlerAction ) ) {
+			return $getColdbox().runEvent(
+				  event          = handlerAction
+				, eventArguments = { recipientId=arguments.recipientId, templateId=arguments.templateId }
+				, private        = true
+				, prePostExempt  = true
+			);
+
+		}
+
+		var interceptData = {
+			  templateId    = arguments.templateId
+			, recipientId   = arguments.recipientId
+			, recipientType = arguments.recipientType
+		};
+
+		$announceInterception(
+			  state         = "onGenerateEmailUnsubscribeLink"
+			, interceptData = interceptData
+		);
+
+		return interceptData.unsubscribeLink ?: "";
 	}
 
 	/**

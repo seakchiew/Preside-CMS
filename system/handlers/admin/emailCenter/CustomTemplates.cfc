@@ -6,13 +6,13 @@ component extends="preside.system.base.AdminHandler" {
 	property name="emailLayoutService"         inject="emailLayoutService";
 	property name="emailMassSendingService"    inject="emailMassSendingService";
 	property name="customizationService"       inject="dataManagerCustomizationService";
+	property name="dataManagerService"         inject="dataManagerService";
+	property name="presideObjectService"       inject="presideObjectService";
 	property name="emailService"               inject="emailService";
 	property name="formsService"               inject="formsService";
 	property name="cloningService"             inject="presideObjectCloningService";
 	property name="dao"                        inject="presidecms:object:email_template";
-	property name="blueprintDao"               inject="presidecms:object:email_blueprint";
 	property name="messageBox"                 inject="messagebox@cbmessagebox";
-
 
 	function prehandler( event, rc, prc ) {
 		super.preHandler( argumentCollection = arguments );
@@ -53,6 +53,8 @@ component extends="preside.system.base.AdminHandler" {
 			event.adminAccessDenied();
 		}
 
+		prc.additionalFormArgs = _getAdditionalAddEditFormArgs( argumentCollection=arguments );
+
 		event.addAdminBreadCrumb(
 			  title = translateResource( "cms:emailcenter.customTemplates.add.page.breadcrumb" )
 			, link  = event.buildAdminLink( linkTo="emailCenter.customTemplates.add" )
@@ -64,9 +66,8 @@ component extends="preside.system.base.AdminHandler" {
 		var saveAction = ( rc._saveAction ?: "savedraft" ) == "publish" ? "publish" : "savedraft";
 		_checkPermissions( event=event, key=saveAction );
 
-		var formName         = "preside-objects.email_template.admin.add";
-		var formData         = event.getCollectionForForm( formName );
-		var validationResult = validateForm( formName, formData );
+		var formData         = event.getCollectionWithoutSystemVars()
+		var validationResult = validateForms( formData );
 
 		if ( validationResult.validated() ) {
 			var id=emailTemplateService.saveTemplate( template=formData, isDraft=( saveAction=="savedraft" ) );
@@ -189,6 +190,7 @@ component extends="preside.system.base.AdminHandler" {
 
 		prc.pageTitle    = translateResource( uri="cms:emailcenter.customTemplates.edit.page.title", data=[ prc.record.name ] );
 		prc.pageSubtitle = translateResource( uri="cms:emailcenter.customTemplates.edit.page.subtitle", data=[ prc.record.name ] );
+		prc.additionalFormArgs = _getAdditionalAddEditFormArgs( argumentCollection=arguments );
 
 		event.addAdminBreadCrumb(
 			  title = translateResource( uri="cms:emailcenter.customTemplates.edit.page.breadcrumb", data=[ prc.record.name ] )
@@ -418,27 +420,31 @@ component extends="preside.system.base.AdminHandler" {
 			  title = translateResource( uri="cms:emailcenter.customTemplates.settings.breadcrumb.title"  , data=[ prc.template.name ] )
 			, link  = event.buildAdminLink( linkTo="emailcenter.customTemplates.settings", queryString="id=" & templateId )
 		);
+
+		var interceptArgs = {
+			  filterObject       = prc.filterObject
+			, anonymousOnly      = prc.anonymousOnly
+			, formName           = prc.formName
+			, formAdditionalArgs = ( prc.formAdditionalArgs ?: {} )
+		};
+		announceInterception( "preRenderEmailTemplateSettingsForm", interceptArgs );
+
+		prc.filterObject       = interceptArgs.filterObject;
+		prc.anonymousOnly      = interceptArgs.anonymousOnly;
+		prc.formName           = interceptArgs.formName;
+		prc.formAdditionalArgs = interceptArgs.formAdditionalArgs;
 	}
 
 	public void function saveSettingsAction( event, rc, prc ) {
 		_checkPermissions( event=event, key="editSendOptions" );
 		_getTemplate( argumentCollection=arguments, allowDrafts=true, fromVersionTable=false );
 
-		var id            = rc.id ?: "";
-		var filterObject  = emailRecipientTypeService.getFilterObjectForRecipientType( prc.record.recipient_type ?: "" );
-		var anonymousOnly = !filterObject.len();
-		var formName      = "preside-objects.email_template.configure.send";
-
-		if ( !anonymousOnly ) {
-			formName = formsService.getMergedFormName( "preside-objects.email_template.configure.send", "preside-objects.email_template.configure.send.methods" );
-		}
-
-		formName = formsService.getMergedFormName( "preside-objects.email_template.admin.edit.settings", formName );
-
-		var formData    = event.getCollectionForForm( formName );
-		    formData.id = id;
-
-		var validationResult = validateForm( formName, formData );
+		var id               = rc.id ?: "";
+		var filterObject     = emailRecipientTypeService.getFilterObjectForRecipientType( prc.record.recipient_type ?: "" );
+		var anonymousOnly    = !filterObject.len();
+		var validationResult = validateForms();
+		var formData         = event.getCollectionWithoutSystemVars();
+		    formData.id      = id;
 
 		if ( anonymousOnly ) {
 			formData.sending_method = "auto";
@@ -454,7 +460,7 @@ component extends="preside.system.base.AdminHandler" {
 		}
 
 		if ( validationResult.validated() ) {
-			emailTemplateService.saveTemplate( id=id, template=formData, isDraft=false );
+			emailTemplateService.saveTemplate( id=id, template=formData, isDraft=( IsTrue( prc.template._version_is_draft ?: false ) ) );
 			emailTemplateService.updateScheduledSendFields( templateId=id );
 
 			messagebox.info( translateResource( "cms:emailcenter.customTemplates.settings.saved.confirmation" ) );
@@ -569,15 +575,18 @@ component extends="preside.system.base.AdminHandler" {
 	}
 
 	public void function getLogsForAjaxDataTables( event, rc, prc ) {
+		var useDistinct = len( rc.sFilterExpression ?: "" ) || len( rc.sSavedFilterExpression ?: "" );
+
 		runEvent(
 			  event          = "admin.DataManager._getObjectRecordsForAjaxDataTables"
 			, prePostExempt  = true
 			, private        = true
 			, eventArguments = {
-				  object        = "email_template_send_log"
-				, gridFields    = "recipient,subject,datecreated,sent,delivered,failed,opened,click_count"
-				, actionsView   = "admin.emailCenter.logs._logGridActions"
-				, filter        = { "email_template_send_log.email_template" = ( rc.id ?: "" ) }
+				  object      = "email_template_send_log"
+				, gridFields  = "recipient,subject,datecreated,sent,delivered,failed,opened,click_count"
+				, actionsView = "admin.emailCenter.logs._logGridActions"
+				, filter      = { "email_template_send_log.email_template" = ( rc.id ?: "" ) }
+				, distinct    = useDistinct
 			}
 		);
 	}
@@ -638,6 +647,33 @@ component extends="preside.system.base.AdminHandler" {
 				, extraFilters  = extraFilters
 			}
 		);
+	}
+
+	public void function getRecipientListForAjaxSelect( event, rc, prc ) {
+		_checkPermissions( event=event, key="read" );
+		_getTemplate( argumentCollection=arguments, allowDrafts=true );
+
+		var templateId      = rc.id ?: "";
+		var hideAlreadySent = IsBoolean( rc.hideAlreadySent ?: "" ) ? rc.hideAlreadySent : true;
+		var extraFilters    = emailMassSendingService.getTemplateRecipientFilters( templateId, hideAlreadySent );
+		var filterObject    = emailRecipientTypeService.getFilterObjectForRecipientType( prc.template.recipient_type );
+		var orderBy         = rc.orderBy       ?: "label";
+		var labelRenderer   = rc.labelRenderer ?: "";
+		var useCache        = IsTrue( rc.useCache ?: "" );
+
+		var records = dataManagerService.getRecordsForAjaxSelect(
+			  objectName    = filterObject
+			, maxRows       = rc.maxRows ?: 1000
+			, searchQuery   = rc.q       ?: ""
+			, savedFilters  = ListToArray( rc.savedFilters ?: "" )
+			, extraFilters  = extraFilters
+			, orderBy       = orderBy
+			, ids           = ListToArray( rc.values ?: "" )
+			, labelRenderer = labelRenderer
+			, useCache      = useCache
+		);
+
+		event.renderData( type="json", data=records );
 	}
 
 	public void function sendAction( event, rc, prc ) {
@@ -773,16 +809,54 @@ component extends="preside.system.base.AdminHandler" {
 	}
 
 	private string function _getTestSendFormName( event, rc, prc ) {
-		var filterObject = emailRecipientTypeService.getFilterObjectForRecipientType( prc.template.recipient_type );
+		var filterObject  = emailRecipientTypeService.getFilterObjectForRecipientType( prc.template.recipient_type );
+
+		if ( !isEmpty( filterObject ) ) {
+			var labelRenderer = presideObjectService.getObjectAttribute( filterObject, "labelRenderer" );
+		} else {
+			var labelRenderer = "";
+		}
+
+		var orderBy       = "label";
+		var cacheBuster   = createuuid();
+		var preFetchUrl   = event.buildAdminLink(
+			  linkTo      = "emailCenter.customTemplates.getRecipientListForAjaxSelect"
+			, querystring = "id=#prc.template.id#&maxRows=100&object=#filterObject#&prefetchCacheBuster=#cacheBuster#&orderBy=#orderBy#&labelRenderer=#labelRenderer#"
+		);
+		var remoteUrl     = event.buildAdminLink(
+			  linkTo      = "emailCenter.customTemplates.getRecipientListForAjaxSelect"
+			, querystring = "id=#prc.template.id#&object=#filterObject#&orderBy=#orderBy#&labelRenderer=#labelRenderer#&q=%QUERY"
+		);
 
 		return formsService.createForm( basedOn="email.test.send.test", generator=function( formDefinition ){
-			formDefinition.modifyField(
-				  name     = "recipient"
-				, fieldset = "default"
-				, tab      = "default"
-				, object   = filterObject
-			);
+			if( !isEmpty( filterObject ) ){
+				formDefinition.modifyField(
+					  name        = "recipient"
+					, fieldset    = "default"
+					, tab         = "default"
+					, object      = filterObject
+					, preFetchUrl = preFetchUrl
+					, remoteUrl   = remoteUrl
+				);
+			} else{
+				formDefinition.modifyField(
+					  name     = "recipient"
+					, fieldset = "default"
+					, tab      = "default"
+					, control  = "hidden"
+					, required = false
+				)
+			}
 		} )
+	}
+
+	private struct function _getAdditionalAddEditFormArgs( event, rc, prc ) {
+		var emailSettings = getSystemCategorySettings( "email" );
+
+		return { fields = { save_content_expiry={
+			  maxValue     = Val( emailSettings.max_content_expiry     ?: 90 )
+			, defaultValue = Val( emailSettings.default_content_expiry ?: 90 )
+		} } };
 	}
 
 }

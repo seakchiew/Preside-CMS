@@ -42,6 +42,7 @@ component {
 		,          numeric exportPagingSize   = 1000
 		,          any     recordsetDecorator = ""
 		,          string  exportFileName     = ""
+		,          string  orderBy            = ""
 		,          string  mimetype           = ""
 		,          any     logger
 		,          any     progress
@@ -49,9 +50,9 @@ component {
 		var exporterHandler      = "dataExporters.#arguments.exporter#.export";
 		var coldboxController    = $getColdbox();
 		var pageNumber           = 1;
-		var canLog               = arguments.keyExists( "logger" );
+		var canLog               = StructKeyExists( arguments, "logger" );
 		var canInfo              = canLog && logger.canInfo();
-		var canReportProgress    = arguments.keyExists( "progress" );
+		var canReportProgress    = StructKeyExists( arguments, "progress" );
 
 		if ( !coldboxController.handlerExists( exporterHandler ) ) {
 			throw( type="preside.dataExporter.missing.action", message="No 'export' action could be found for the [#arguments.exporter#] exporter. The exporter should provide an 'export' handler action at /handlers/dataExporters/#arguments.exporter#.cfc to process the export. See documentation for further details." );
@@ -60,6 +61,8 @@ component {
 		if ( !arguments.selectFields.len() ) {
 			arguments.append( getDefaultExportFieldsForObject( arguments.objectName ) );
 		}
+
+		$announceInterception( "preDataExportPrepareData", arguments );
 
 		var selectDataArgs       = Duplicate( arguments );
 		var cleanedSelectFields  = [];
@@ -70,15 +73,12 @@ component {
 		selectDataArgs.delete( "meta" );
 		selectDataArgs.delete( "fieldTitles" );
 		selectDataArgs.delete( "exportPagingSize" );
-		selectDataArgs.maxRows   = arguments.exportPagingSize;
-		selectDataArgs.startRow  = 1;
-		selectDataArgs.autoGroup = true;
-		selectDataArgs.useCache  = false;
-		selectDataArgs.orderBy   = presideObjectService.getObjectAttribute(
-			  objectName    = arguments.objectName
-			, attributeName = "dataExportDefaultSortOrder"
-		);
+		selectDataArgs.maxRows     = arguments.exportPagingSize;
+		selectDataArgs.startRow    = 1;
+		selectDataArgs.autoGroupBy = true;
+		selectDataArgs.useCache    = false;
 		selectDataArgs.selectFields = _expandRelationshipFields( arguments.objectname, selectDataArgs.selectFields );
+		selectDataArgs.orderBy      = _getOrderBy( arguments.objectName, arguments.orderBy );
 
 		if ( canReportProgress || canLog ) {
 			var totalRecordsToExport = presideObjectService.selectData(
@@ -167,6 +167,8 @@ component {
 		}
 		arguments.fieldTitles = _setDefaultFieldTitles( arguments.objectname, cleanedSelectFields, arguments.fieldTitles );
 
+		$announceInterception( "postDataExportPrepareData", arguments );
+
 		var result = coldboxController.runEvent(
 			  private        = true
 			, prepostExempt  = true
@@ -228,7 +230,7 @@ component {
 								continue;
 							break;
 							case "varchar":
-								if ( Val( prop.maxLength ?: "" ) > 200 ) {
+								if ( Val( prop.maxLength ?: "" ) > 800 ) {
 									continue;
 								}
 							break;
@@ -305,6 +307,49 @@ component {
 		}
 
 		return arguments.existingTitles;
+	}
+
+	private string function _getOrderBy( required string objectName, required string orderBy ) {
+		var orderElements    = ListToArray( arguments.orderBy );
+		var validDirections  = [ "asc", "desc" ];
+		var validatedOrderBy = arguments.orderBy;
+		var objectProperties = $getPresideObjectService().getObjectProperties( arguments.objectName );
+
+		for( var el in orderElements ) {
+			var fieldName         = Trim( ListFirst( el, " " ) );
+			var fieldRelationship = objectProperties[fieldName].relationship ?: "";
+			var dir               = ListLen( el, " " ) > 1 ? LCase( Trim( ListRest( el, " " ) ) ) : "asc";
+
+			if ( !ArrayFind( validDirections, dir ) ) {
+				validatedOrderBy = "";
+				break;
+			}
+
+			if ( !StructKeyExists( objectProperties, fieldName ) ) {
+				validatedOrderBy = "";
+				break;
+			}
+
+			if( fieldRelationship == "many-to-one" ){
+				var fieldRelatedTo = objectProperties[fieldName].relatedto ?: "";
+				if( Len( fieldRelatedTo ) ){
+					var fieldRelatedToLabel = $getPresideObjectService().getLabelField( fieldRelatedTo );
+
+					if( Len( fieldRelatedToLabel ) ){
+						validatedOrderBy = replace( validatedOrderBy, fieldName, "#fieldName#.#fieldRelatedToLabel#" );
+					}
+				}
+			}
+		}
+
+		if ( !Len( Trim( validatedOrderBy ) ) ) {
+			validatedOrderBy = $getPresideObjectService().getObjectAttribute(
+				  objectName    = arguments.objectName
+				, attributeName = "dataExportDefaultSortOrder"
+			);
+		}
+
+		return validatedOrderBy;
 	}
 
 // GETTERS AND SETTERS

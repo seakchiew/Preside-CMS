@@ -34,6 +34,7 @@ component displayname="Image Manipulation Service" {
 		,          string  focalPoint          = ""
 		,          string  cropHint            = ""
 		,          string  useCropHint         = false
+		,          struct  fileProperties      = {}
 	) {
 		var args = arguments;
 
@@ -54,6 +55,7 @@ component displayname="Image Manipulation Service" {
 		, required numeric width
 		, required numeric height
 		,          string  quality = "highPerformance"
+		,          struct  fileProperties      = {}
 	) {
 		return _getImplementation().shrinkToFit( argumentCollection = arguments);
 	}
@@ -65,12 +67,24 @@ component displayname="Image Manipulation Service" {
 		,          string format
 		,          string pages
 		,          string transparent
+		,          struct fileProperties      = {}
 	) {
 		return _getImplementation().pdfPreview( argumentCollection = arguments );
 	}
 
 	public struct function getImageInformation( required binary asset ) {
 		return _getImplementation().getImageInformation( argumentCollection = arguments );
+	}
+
+	public boolean function isValidImageFile( required string path ) {
+		var asset = fileReadBinary( arguments.path );
+		try {
+			var imageInfo = getImageInformation( asset );
+		}
+		catch( any e ) {
+			return false;
+		}
+		return isStruct( imageInfo ) && StructKeyExists( imageInfo, "height" );
 	}
 
 	private struct function _getCropHintArea(
@@ -119,7 +133,7 @@ component displayname="Image Manipulation Service" {
 
 
 		if ( cropWidth > imageInfo.width || cropHeight > imageInfo.height ) {
-			fitRatio       = min( imageInfo.width / cropWidth, imageInfo.height / cropHeight );
+			var fitRatio   = min( imageInfo.width / cropWidth, imageInfo.height / cropHeight );
 			prevCropWidth  = cropWidth;
 			prevCropHeight = cropHeight;
 			cropWidth      = int( cropWidth  * fitRatio );

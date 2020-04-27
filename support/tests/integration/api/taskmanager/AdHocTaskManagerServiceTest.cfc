@@ -78,6 +78,32 @@ component extends="testbox.system.BaseSpec" {
 				expect( log[1] ).toBe( { taskId=taskId } );
 			} );
 
+			it( "should fail the task and return false when the handler returns false", function(){
+				var service = _getService();
+				var taskId  = CreateUUId();
+				var event   = "some.handler.action";
+				var args    = { test=CreateUUId(), fubar=123 };
+				var taskDef = QueryNew( 'event,event_args,status', 'varchar,varchar,varchar', [ [ event, SerializeJson( args ), "pending" ] ] );
+
+				_mockGetTask( taskId, taskDef );
+				mockColdbox.$( "runEvent", false );
+				var mockProgress = _mockProgress( service, taskId );
+				var mockLogger   = _mockLogger( service, taskId );
+
+				service.$( "completeTask" );
+				service.$( "failTask" );
+				service.$( "markTaskAsRunning" );
+
+				expect( service.runTask( taskId ) ).toBe( false );
+
+				log = service.$callLog().completeTask;
+				expect( log.len() ).toBe( 0 );
+
+				log = service.$callLog().failTask;
+				expect( log.len() ).toBe( 1 );
+				expect( log[1] ).toBe( { taskId=taskId, error={} } );
+			} );
+
 			it( "should return false, fail the task and log error when an error is thrown during execution of the handler action", function(){
 				var service = _getService();
 				var taskId  = CreateUUId();
@@ -138,6 +164,29 @@ component extends="testbox.system.BaseSpec" {
 				expect( log[1].error.type    ?: "" ).toBe( "AdHoTaskManagerService.task.already.running" );
 				expect( log[1].error.message ?: "" ).toBe( "Task not run. The task with ID, [#taskId#], is already running." );
 			} );
+
+			it( "should set useQueryCache to false for the request to ensure query caching is not used throughout the process (by default)", function(){
+				var service = _getService();
+				var taskId  = CreateUUId();
+				var event   = "some.handler.action";
+				var args    = { test=CreateUUId(), fubar=123 };
+				var taskDef = QueryNew( 'event,event_args,status', 'varchar,varchar,varchar', [ [ event, SerializeJson( args ), "pending" ] ] );
+
+				_mockGetTask( taskId, taskDef );
+				mockColdbox.$( "runEvent" );
+				var mockProgress = _mockProgress( service, taskId );
+				var mockLogger   = _mockLogger( service, taskId );
+
+				service.$( "completeTask" );
+				service.$( "failTask" );
+				service.$( "markTaskAsRunning" );
+
+				service.runTask( taskId );
+
+				log = mockRequestContext.$callLog().setUseQueryCache;
+				expect( log.len() ).toBe( 1 );
+				expect( log[1] ).toBe( [ false ] );
+			} );
 		} );
 
 		describe( "createTask()", function(){
@@ -150,7 +199,7 @@ component extends="testbox.system.BaseSpec" {
 
 				mockTaskDao.$( "insertData" ).$args( {
 					  event               = event
-					, event_args          = SerializeJson( args )
+					, event_args          = SerializeJson( _addMockRequestState( args ) )
 					, admin_owner         = owner
 					, web_owner           = ""
 					, discard_on_complete = false
@@ -178,7 +227,7 @@ component extends="testbox.system.BaseSpec" {
 
 				mockTaskDao.$( "insertData" ).$args( {
 					  event               = event
-					, event_args          = SerializeJson( args )
+					, event_args          = SerializeJson( _addMockRequestState( args ) )
 					, admin_owner         = ""
 					, web_owner           = owner
 					, discard_on_complete = true
@@ -218,7 +267,7 @@ component extends="testbox.system.BaseSpec" {
 
 				mockTaskDao.$( "insertData" ).$args( {
 					  event               = event
-					, event_args          = SerializeJson( args )
+					, event_args          = SerializeJson( _addMockRequestState( args ) )
 					, admin_owner         = owner
 					, web_owner           = ""
 					, discard_on_complete = false
@@ -256,7 +305,7 @@ component extends="testbox.system.BaseSpec" {
 
 				mockTaskDao.$( "insertData" ).$args( {
 					  event               = event
-					, event_args          = SerializeJson( args )
+					, event_args          = SerializeJson( _addMockRequestState( args ) )
 					, admin_owner         = ""
 					, web_owner           = ""
 					, discard_on_complete = false
@@ -284,7 +333,7 @@ component extends="testbox.system.BaseSpec" {
 
 				mockTaskDao.$( "insertData" ).$args( {
 					  event               = event
-					, event_args          = SerializeJson( args )
+					, event_args          = SerializeJson( _addMockRequestState( args ) )
 					, admin_owner         = ""
 					, web_owner           = ""
 					, discard_on_complete = false
@@ -314,7 +363,7 @@ component extends="testbox.system.BaseSpec" {
 
 				mockTaskDao.$( "insertData" ).$args( {
 					  event               = event
-					, event_args          = SerializeJson( args )
+					, event_args          = SerializeJson( _addMockRequestState( args ) )
 					, admin_owner         = ""
 					, web_owner           = owner
 					, discard_on_complete = true
@@ -407,9 +456,10 @@ component extends="testbox.system.BaseSpec" {
 				var taskId      = CreateUUId();
 				var error       = { type="test.error", message="Something went wrong" };
 				var nextAttempt = { totalAttempts=1, nextAttemptDate="" };
+				var forceRetry  = false;
 
 				mockTaskDao.$( "updateData", 1 );
-				service.$( "getNextAttemptInfo" ).$args( taskId ).$results( nextAttempt );
+				service.$( "getNextAttemptInfo" ).$args( taskId, forceRetry ).$results( nextAttempt );
 
 				service.failTask( taskId, error );
 
@@ -426,12 +476,39 @@ component extends="testbox.system.BaseSpec" {
 				var taskId      = CreateUUId();
 				var error       = { type="test.error", message="Something went wrong" };
 				var nextAttempt = { totalAttempts=3, nextAttemptDate=DateAdd( "n", 40, Now() ) };
+				var forceRetry  = false;
 
 				mockTaskDao.$( "updateData", 1 );
-				service.$( "getNextAttemptInfo" ).$args( taskId ).$results( nextAttempt );
+				service.$( "getNextAttemptInfo" ).$args( taskId, forceRetry ).$results( nextAttempt );
 				service.$( "requeueTask" );
 
 				service.failTask( taskId, error );
+
+				var log = mockTaskDao.$callLog().updateData;
+				expect( log.len() ).toBe( 0 );
+
+				log = service.$callLog().requeueTask;
+				expect( log.len() ).toBe( 1 );
+				expect( log[1] ).toBe( {
+					  taskId          = taskId
+					, error           = error
+					, attemptCount    = nextAttempt.totalAttempts
+					, nextAttemptDate = nextAttempt.nextAttemptDate
+				} );
+			} );
+
+			it( "should requeue task when forceRetry is true, even if no retry attempts defined", function(){
+				var service     = _getService();
+				var taskId      = CreateUUId();
+				var error       = { type="test.error", message="Something went wrong" };
+				var nextAttempt = { totalAttempts=0, nextAttemptDate=DateAdd( "n", 1, Now() ) };
+				var forceRetry  = true;
+
+				mockTaskDao.$( "updateData", 1 );
+				service.$( "getNextAttemptInfo" ).$args( taskId, forceRetry ).$results( nextAttempt );
+				service.$( "requeueTask" );
+
+				service.failTask( taskId, error, forceRetry );
 
 				var log = mockTaskDao.$callLog().updateData;
 				expect( log.len() ).toBe( 0 );
@@ -688,6 +765,7 @@ component extends="testbox.system.BaseSpec" {
 		mockSiteService     = CreateStub();
 		mockLogboxLogger    = CreateStub();
 		mockThreadUtil      = CreateStub();
+		mockExecutor        = CreateStub();
 		nowish              = DateAdd( 'd', 1, Now() );
 
 		var service = CreateMock( object=new preside.system.services.taskmanager.AdHocTaskManagerService(
@@ -695,13 +773,19 @@ component extends="testbox.system.BaseSpec" {
 			, siteService          = mockSiteService
 			, logger               = mockLogBoxLogger
 			, threadUtil           = mockThreadUtil
+			, executor             = mockExecutor
 		) );
+
+		mockRequestContext.$( "setUseQueryCache" );
+		mockRequestContext.$( "getSiteId", "mock-site-id" );
+		mockRequestContext.$( "getLanguage", "mock-language" );
 
 		service.$( "$getPresideObject" ).$args( "taskmanager_adhoc_task" ).$results( mockTaskDao );
 		service.$( "$getColdbox", mockColdbox );
 		service.$( "$getRequestContext", mockRequestContext );
 		service.$( "$isFeatureEnabled" ).$args( "sslInternalHttpCalls" ).$results( true );
 		service.$( "_now", nowish );
+		service.$( "_setRequestState" );
 
 		return service;
 	}
@@ -725,5 +809,14 @@ component extends="testbox.system.BaseSpec" {
 		service.$( "_getTaskLogger" ).$args( arguments.taskId ).$results( dummyObj );
 
 		return dummyObj;
+	}
+
+	private struct function _addMockRequestState( struct args ){
+		args.__requestState = {
+			  site     = "mock-site-id"
+			, language = "mock-language"
+		};
+
+		return args;
 	}
 }

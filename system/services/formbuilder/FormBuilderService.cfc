@@ -512,7 +512,7 @@ component {
 		var itemViewlet      = renderingService.getItemTypeViewlet( itemType=arguments.itemType, context="input" );
 		var renderedItem     = $renderViewlet( event=itemViewlet, args=arguments.configuration );
 
-		if ( arguments.configuration.keyExists( "layout" ) ) {
+		if ( StructKeyExists( arguments.configuration, "layout" ) ) {
 			var layoutArgs    = Duplicate( arguments.configuration );
 			var layoutViewlet = renderingService.getFormFieldLayoutViewlet(
 				  itemType = arguments.itemType
@@ -890,9 +890,9 @@ component {
 			return;
 		}
 
-		var canLog            = arguments.keyExists( "logger" );
+		var canLog            = StructKeyExists( arguments, "logger" );
 		var canInfo           = canLog && logger.canInfo();
-		var canReportProgress = arguments.keyExists( "progress" );
+		var canReportProgress = StructKeyExists( arguments, "progress" );
 		var renderingService  = _getFormBuilderRenderingService();
 		var formItems         = getFormItems( arguments.formId );
 		var spreadsheetLib    = _getSpreadsheetLib();
@@ -910,9 +910,10 @@ component {
 		}
 		for( var i=1; i <= formItems.len(); i++ ) {
 			if ( formItems[i].type.isFormField ) {
-				var columns = renderingService.getItemTypeExportColumns( formItems[i].type.id, formItems[i].configuration );
+				var exclude = isBoolean( formItems[i].configuration.exclude_export ?: "" ) && formItems[i].configuration.exclude_export;
+				var columns = !exclude ? renderingService.getItemTypeExportColumns( formItems[i].type.id, formItems[i].configuration ) : [];
 
-				if ( columns.len() ) {
+				if ( columns.len() && !exclude ) {
 					itemsToRender.append( formItems[i] );
 					itemColumnMap[ formItems[ i ].id ] = columns;
 					headers.append( columns, true );
@@ -931,11 +932,12 @@ component {
 
 		var row = 1;
 		for( var submission in submissions ) {
-			var column = 4;
+			var column      = 4;
+			var submittedBy = Len( submission.submitted_by ) ? $renderLabel( "website_user", submission.submitted_by ) : "";
 			row++;
 			spreadsheetLib.setCellValue( workbook, submission.id, row, 1, "string" );
 			spreadsheetLib.setCellValue( workbook, DateTimeFormat( submission.datecreated, "yyyy-mm-dd HH:nn:ss" ), row, 2, "string" );
-			spreadsheetLib.setCellValue( workbook, submission.submitted_by, row, 3, "string" );
+			spreadsheetLib.setCellValue( workbook, submittedBy, row, 3, "string" );
 			spreadsheetLib.setCellValue( workbook, submission.form_instance, row, 4, "string" );
 
 			if ( itemsToRender.len() ) {
@@ -1012,7 +1014,7 @@ component {
 			var formItem = formItems[i];
 			var itemName = formItem.configuration.name ?: "";
 
-			if ( formItem.type.isFormField && arguments.formData.keyExists( itemName ) ) {
+			if ( formItem.type.isFormField && StructKeyExists( arguments.formData, itemName ) ) {
 				var rendererViewlet = rendererService.getItemTypeViewlet(
 					  itemType = formItem.type.id
 					, context  = "responseToPersist"

@@ -1,9 +1,9 @@
 component extends="preside.system.base.AdminHandler" {
+
 	property name="siteTreeService"                  inject="siteTreeService";
 	property name="presideObjectService"             inject="presideObjectService";
 	property name="formsService"                     inject="formsService";
 	property name="pageTypesService"                 inject="pageTypesService";
-	property name="validationEngine"                 inject="validationEngine";
 	property name="websitePermissionService"         inject="websitePermissionService";
 	property name="dataManagerService"               inject="dataManagerService";
 	property name="versioningService"                inject="versioningService";
@@ -100,7 +100,7 @@ component extends="preside.system.base.AdminHandler" {
 
 		if ( ancestors.recordCount ) {
 			additionalNodeArgs.permission_context = ValueArray( ancestors.id );
-			additionalNodeArgs.permission_context.reverse();
+			additionalNodeArgs.permission_context = additionalNodeArgs.permission_context.reverse();
 		}
 		additionalNodeArgs.permission_context.prepend( parentId );
 
@@ -179,6 +179,12 @@ component extends="preside.system.base.AdminHandler" {
 
 		prc.mainFormName  = "preside-objects.page.add";
 		prc.mergeFormName = _getPageTypeFormName( pageType, "add" );
+
+		if ( _isManagedPage( parentPageId, rc.page_type ) ) {
+			prc.cancelLink = event.buildAdminLink( linkto="sitetree.managedChildren", querystring="parent=#parentPageId#&pageType=#rc.page_type#" );
+		} else {
+			prc.cancelLink = event.buildAdminLink( linkTo="sitetree" );
+		}
 
 		_pageCrumbtrail( argumentCollection=arguments, pageId=parentPageId, pageTitle=prc.parentPage.title );
 		event.addAdminBreadCrumb(
@@ -616,6 +622,13 @@ component extends="preside.system.base.AdminHandler" {
 			} else {
 				prc.mainFormName  = "preside-objects.#translationPageTypeObject#.admin.edit";
 				prc.mergeFormName = "";
+			}
+
+			if ( prc.pageIsMultilingual ) {
+				version = versioningService.getLatestVersionNumber(
+					  objectName = translationPageTypeObject
+					, filter     = { _translation_source_record=pageId, _translation_language=prc.language.id }
+				);
 			}
 
 			var translation = multiLingualPresideObjectService.selectTranslation( objectName=prc.pageTypeObjectName, id=pageId, languageId=prc.language.id, useCache=false, version=version );
@@ -1177,8 +1190,7 @@ component extends="preside.system.base.AdminHandler" {
 	}
 
 	public void function previewPage( event, rc, prc ) {
-		prc._forceDomainLookup = true;
-		setNextEvent( url=event.buildLink( page=( rc.id ?: "" ), lookupDomain=true ) );
+		setNextEvent( url=event.buildLink( page=( rc.id ?: "" ), forceDomain=true ) );
 	}
 
 	public void function clearPageCacheAction( event, rc, prc ) {
@@ -1188,6 +1200,7 @@ component extends="preside.system.base.AdminHandler" {
 
 		if ( pageId.isEmpty() ) {
 			getController().getCachebox().clearAll();
+			announceInterception( "onClearCaches", {} );
 
 			event.audit(
 				  action = "clear_page_cache"
@@ -1201,6 +1214,11 @@ component extends="preside.system.base.AdminHandler" {
 
 			pageCache.clearByKeySnippet( pageUrl );
 			pageCache.clearByKeySnippet( sectionUrl );
+
+			announceInterception( "onClearPageCaches", {
+				  pageUrl    = pageUrl
+				, sectionUrl = sectionUrl
+			} );
 
 			event.audit(
 				  action   = "clear_cache_for_page"
@@ -1290,7 +1308,7 @@ component extends="preside.system.base.AdminHandler" {
 		var pageId   = arguments.pageId ?: ( rc.id ?: "" );
 		var cacheKey = "pagePermissionContext";
 
-		if ( prc.keyExists( cacheKey ) ) {
+		if ( StructKeyExists( prc, cacheKey ) ) {
 			return prc[ cacheKey ];
 		}
 

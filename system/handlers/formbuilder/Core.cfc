@@ -3,11 +3,11 @@ component {
 	property name="formBuilderService"           inject="formBuilderService";
 	property name="formBuilderValidationService" inject="formBuilderValidationService";
 	property name="validationEngine"             inject="validationEngine";
-	property name="storageProvider" 			 inject="formBuilderStorageProvider";
 
 	public any function submitAction( event, rc, prc ) {
 		var formId       = rc.form ?: "";
-		var validRequest = Len( Trim( formId ) ) && Len( Trim( cgi.http_referer ) ) && event.getHTTPMethod() == "POST";
+		var theForm      = formBuilderService.getForm( formId );
+		var validRequest = theForm.recordCount == 1 && Len( Trim( cgi.http_referer ) ) && event.getHTTPMethod() == "POST";
 
 		if ( !validRequest ) {
 			event.notFound();

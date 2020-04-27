@@ -401,7 +401,7 @@ component {
 	 *
 	 */
 	public boolean function deleteExpiredContent( any logger ) {
-		var canLog   = arguments.keyExists( "logger" );
+		var canLog   = StructKeyExists( arguments, "logger" );
 		var canInfo  = canLog && logger.canInfo();
 		var canError = canLog && logger.canError();
 		var dao      = $getPresideObject( "email_template_send_log_content");
@@ -494,7 +494,7 @@ component {
 								, body      = body
 							} );
 						} catch( any e ) {
-							shortenedLinkId = linkDao.selectData( filter={ link_hash=linkhash }, selectFields=[ "id" ] ).id;
+							shortenedLinkId = linkDao.selectData( filter={ link_hash=linkhash }, selectFields=[ "id" ], useCache=false ).id;
 
 							if ( !shortenedLinkId.len() ) {
 								rethrow;
@@ -545,6 +545,12 @@ component {
 			}
 		}
 		data.extra_data = SerializeJson( extra );
+
+		try {
+			$announceInterception( "onEmail#arguments.activity#", data );
+		} catch( any e ) {
+			$raiseError( e );
+		}
 
 		try {
 			$getPresideObject( "email_template_send_log_activity" ).insertData( data );

@@ -54,6 +54,7 @@ component {
 		var processedCount = 0;
 		var queuedEmail    = "";
 		var emailService   = _getEmailService();
+		var poService       = $getPresideObjectService();
 
 		do {
 			queuedEmail = getNextQueuedEmail();
@@ -73,8 +74,14 @@ component {
 			}
 
 			removeFromQueue( queuedEmail.id );
+			if ( !processedCount mod 10 ) {
+				poService.clearRelatedCaches( "email_mass_send_queue" );
+			}
 		} while( ++processedCount < rateLimit && !$isInterrupted() );
 
+		if ( processedCount ) {
+			poService.clearRelatedCaches( "email_mass_send_queue" );
+		}
 	}
 
 	/**
@@ -160,7 +167,15 @@ component {
 
 		extraFilters.append( _getDuplicateCheckFilter( recipientObject, arguments.templateId ) );
 
-		return extraFilters;
+		var interceptorArgs = {
+			  extraFilters    = extraFilters
+			, templateId      = arguments.templateId
+			, recipientObject = recipientObject
+			, template        = template
+		};
+		$announceInterception( "onPrepareEmailTemplateRecipientFilters", interceptorArgs );
+
+		return interceptorArgs.extraFilters;
 	}
 
 	/**
@@ -185,6 +200,7 @@ component {
 			, extraFilters    = getTemplateRecipientFilters( arguments.templateId )
 			, recordCountOnly = true
 			, distinct        = true
+			, useCache        = false
 		);
 	}
 
@@ -201,13 +217,23 @@ component {
 		var totalQueued       = 0;
 
 		for( var oneTimeTemplate in oneTimeTemplates ){
-			totalQueued += queueSendout( oneTimeTemplate );
-			templateService.updateScheduledSendFields( templateId=oneTimeTemplate, markAsSent=true );
+			try {
+				totalQueued += queueSendout( oneTimeTemplate );
+				templateService.updateScheduledSendFields( templateId=oneTimeTemplate, markAsSent=true );
+			}
+			catch( any e ) {
+				$raiseError( e );
+			}
 		}
 
 		for( var repeatedTemplate in repeatedTemplates ){
-			totalQueued += queueSendout( repeatedTemplate );
-			templateService.updateScheduledSendFields( templateId=repeatedTemplate );
+			try {
+				totalQueued += queueSendout( repeatedTemplate );
+				templateService.updateScheduledSendFields( templateId=repeatedTemplate );
+			}
+			catch( any e ) {
+				$raiseError( e );
+			}
 		}
 
 		return totalQueued;
@@ -333,7 +359,7 @@ component {
 
 // PRIVATE HELPERS
 	private date function _getLimitDate( required string unit, required numeric measure ) {
-		if ( !_timeUnitToCfMapping.keyExists( arguments.unit ) ) {
+		if ( !StructKeyExists( _timeUnitToCfMapping, arguments.unit ) ) {
 			return '1900-01-01';
 		}
 

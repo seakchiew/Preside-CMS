@@ -135,33 +135,6 @@ component extends="testbox.system.BaseSpec" {
 				} );
 			} );
 
-			it( "should flag the task as started while running and complete when finished", function(){
-				var tm         = _getTaskManagerService();
-				var taskKey    = "syncEvents";
-				var task       = { event="sync.events", name="another task", timeout=120 };
-				var logId      = CreateUUId();
-				var threadId   = CreateUUId();
-				var taskConfig = { crontab_definition = "* */10 * * * *", timeout=120 };
-
-				tm.$( "getTask" ).$args( taskKey ).$results( task );
-				tm.$( "getTaskConfiguration" ).$args( taskKey ).$results( taskConfig );
-				tm.$( "taskIsRunning" ).$args( taskKey ).$results( false );
-				mockColdbox.$( "runEvent", true );
-				tm.$( "markTaskAsStarted" );
-				tm.$( "markTaskAsCompleted" );
-				tm.$( "createTaskHistoryLog", logId );
-				tm.$( "_getLogger" ).$args( logId ).$results( mockLogger );
-
-				tm.runTaskWithinThread( taskKey=taskKey, args={}, threadId=threadId, logger=mockLogger );
-				sleep( 200 );
-
-				expect( tm.$callLog().markTaskAsStarted.len() ).toBe( 1 );
-				expect( tm.$callLog().markTaskAsStarted[1][1] ).toBe( threadId );
-				expect( tm.$callLog().markTaskAsCompleted.len() ).toBe( 1 );
-				expect( tm.$callLog().markTaskAsCompleted[1].taskKey ).toBe( taskKey );
-				expect( tm.$callLog().markTaskAsCompleted[1].success ).toBe( true );
-			} );
-
 			it( "should flag the task as complete and unsuccessful when task run throws an error", function(){
 				var tm       = _getTaskManagerService();
 				var taskKey = "syncEvents";
@@ -576,6 +549,7 @@ component extends="testbox.system.BaseSpec" {
 					, filter       = "enabled = :enabled and is_running = :is_running and next_run < :next_run"
 					, filterParams = { enabled=true, is_running=false, next_run=rightNow }
 					, orderBy      = "priority desc"
+					, useCache     = false
 				).$results( dummyRecordset );
 
 				expect( tm.getRunnableTasks() ).toBe( tasks );
@@ -614,11 +588,11 @@ component extends="testbox.system.BaseSpec" {
 				mockSiteService.$( "getActiveSiteId", siteId );
 
 				tm.$( "getRunnableTasks", tasks );
-				tm.$( "_runTaskInNewRequest" );
+				tm.$( "runTask" );
 
 				tm.runScheduledTasks();
 
-				expect( tm.$callLog()._runTaskInNewRequest.len() ).toBe( 3 );
+				expect( tm.$callLog().runTask.len() ).toBe( 3 );
 			} );
 
 			it( "should return an array of the tasks that were started", function(){
@@ -633,7 +607,7 @@ component extends="testbox.system.BaseSpec" {
 				mockSiteService.$( "getActiveSiteId", siteId );
 
 				tm.$( "getRunnableTasks", tasks );
-				tm.$( "_runTaskInNewRequest" );
+				tm.$( "runTask" );
 
 				var result = tm.runScheduledTasks();
 
@@ -655,6 +629,7 @@ component extends="testbox.system.BaseSpec" {
 		mockErrorLogService  = mockbox.createStub();
 		mockSiteService      = mockbox.createStub();
 		mockThreadUtil       = mockbox.createStub();
+		mockExecutor         = mockbox.createStub();
 		mockLogger           = _getMockLogger();
 
 		configWrapper.$( "getConfiguredTasks", arguments.dummyConfig );
@@ -671,6 +646,7 @@ component extends="testbox.system.BaseSpec" {
 		tm.$( "$getRequestContext", mockRc );
 		tm.$( "$getErrorLogService", mockErrorLogService );
 		tm.$( "$isFeatureEnabled" ).$args( "sslInternalHttpCalls" ).$results( true );
+		tm.$( "_setActiveSite" );
 		mockRc.$( "setUseQueryCache" );
 
 		return tm.init(
@@ -683,6 +659,7 @@ component extends="testbox.system.BaseSpec" {
 			, errorLogService              = mockErrorLogService
 			, siteService                  = mockSiteService
 			, threadUtil                   = mockThreadUtil
+			, executor                     = mockExecutor
 		);
 	}
 

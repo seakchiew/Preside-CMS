@@ -13,16 +13,18 @@ component displayName="Ad-hoc Task Manager Service" {
 	 * @siteService.inject siteService
 	 * @threadUtil.inject  threadUtil
 	 * @logger.inject      logbox:logger:taskmanager
+ 	 * @executor.inject    presideAdhocTaskManagerExecutor
 	 */
 	public any function init(
 		  required any siteService
 		, required any logger
 		, required any threadUtil
+		, required any executor
 	) {
 		_setSiteService( arguments.siteService );
 		_setLogger( arguments.logger );
 		_setThreadUtil( arguments.threadUtil );
-
+		_setExecutor( arguments.executor );
 
 		return this;
 	}
@@ -63,7 +65,7 @@ component displayName="Ad-hoc Task Manager Service" {
 	) {
 		var taskId = $getPresideObject( "taskmanager_adhoc_task" ).insertData( {
 			  event               = arguments.event
-			, event_args          = SerializeJson( arguments.args )
+			, event_args          = SerializeJson( _addRequestStateArgs( arguments.args ) )
 			, admin_owner         = arguments.adminOwner
 			, web_owner           = arguments.webOwner
 			, discard_on_complete = arguments.discardOnComplete
@@ -94,10 +96,14 @@ component displayName="Ad-hoc Task Manager Service" {
 	 */
 	public boolean function runTask( required string taskId ) {
 		lock timeout="1" name="adhocRunTask#arguments.taskId#" {
+			$getRequestContext().setUseQueryCache( false );
+
 			var task  = getTask( arguments.taskId );
 			var event = task.event ?: "";
 			var args  = IsJson( task.event_args ?: "" ) ? DeserializeJson( task.event_args ) : {};
 			var e     = "";
+
+			_setRequestState( args.__requestState ?: {} );
 
 			if ( !task.recordCount ) {
 				return true;
@@ -116,9 +122,10 @@ component displayName="Ad-hoc Task Manager Service" {
 
 			var logger   = _getTaskLogger( taskId );
 			var progress = _getTaskProgressReporter( taskId );
+			var success  = true;
 
 			try {
-				$getColdbox().runEvent(
+				success = $getColdbox().runEvent(
 					  event          = task.event
 					, eventArguments = { args=args, logger=logger, progress=progress }
 					, private        = true
@@ -131,7 +138,13 @@ component displayName="Ad-hoc Task Manager Service" {
 				return false;
 			}
 
-			completeTask( taskId=arguments.taskId );
+			if ( IsBoolean( local.success ?: "" ) && !local.success ) {
+				failTask( taskId=arguments.taskId, error={} );
+				return false;
+			} else {
+				completeTask( taskId=arguments.taskId );
+			}
+
 		}
 
 		return true;
@@ -148,7 +161,7 @@ component displayName="Ad-hoc Task Manager Service" {
 			var nextTask = getNextScheduledTaskToRun();
 
 			if ( !IsNull( nextTask ) ) {
-				_runTaskInNewRequest( nextTask.id );
+				runTaskInThread( nextTask.id );
 			}
 		} while( !IsNull( nextTask ) );
 	}
@@ -161,15 +174,14 @@ component displayName="Ad-hoc Task Manager Service" {
 	 * @taskId  ID of the task to run
 	 */
 	public void function runTaskInThread( required string taskId ) {
-		thread name="adhocTaskThread-#CreateUUId()#" taskId=arguments.taskId {
-			var tu   = _getThreadUtil();
-			var task = getTask( attributes.taskId );
-
-			tu.setThreadRequestDefaults();
-			tu.setThreadName( "Preside Adhoc task #task.event#: #arguments.taskId#" );
-
-			runTask( attributes.taskId );
+		if ( !_getExecutor().isStarted() ) {
+			_getExecutor().start();
 		}
+
+		_getExecutor().submit( new AdhocTaskManagerRunnable(
+			  service = this
+			, taskId  = arguments.taskId
+		) );
 	}
 
 	/**
@@ -196,6 +208,7 @@ component displayName="Ad-hoc Task Manager Service" {
 			, filterparams = { next_attempt_date=Now(), status=validStatuses }
 			, maxRows      = 1
 			, orderBy      = "attempt_count,datecreated"
+			, useCache     = false
 		);
 
 		if ( potentialTask.recordCount ) {
@@ -258,12 +271,13 @@ component displayName="Ad-hoc Task Manager Service" {
 	/**
 	 * Marks a task as failed
 	 *
-	 * @autodoc true
-	 * @taskId  ID of the task to mark as failed
-	 * @error   Error that prompted task failure
+	 * @autodoc    true
+	 * @taskId     ID of the task to mark as failed
+	 * @error      Error that prompted task failure
+	 * @forceRetry If true, will ignore retry config and automatically queue for retry
 	 */
-	public void function failTask( required string taskId, struct error={} ) {
-		var nextAttempt = getNextAttemptInfo( arguments.taskId );
+	public void function failTask( required string taskId, struct error={}, boolean forceRetry=false ) {
+		var nextAttempt = getNextAttemptInfo( arguments.taskId, arguments.forceRetry );
 
 		if ( IsDate( nextAttempt.nextAttemptDate ) ) {
 			requeueTask(
@@ -420,20 +434,26 @@ component displayName="Ad-hoc Task Manager Service" {
 	 * Keys are: "nextAttemptDate", "totalAttempts". Returns an empty struct
 	 * if task cannot be retried.
 	 *
-	 * @autodoc true
-	 * @taskId  ID of the task
+	 * @autodoc    true
+	 * @taskId     ID of the task
+	 * @forceRetry If true, will ignore retry config and automatically queue for retry
 	 *
 	 */
-	public struct function getNextAttemptInfo( required string taskId ) {
+	public struct function getNextAttemptInfo( required string taskId, boolean forceRetry=false ) {
 		var task          = getTask( arguments.taskId );
 		var retryConfig   = IsJson( task.retry_interval ?: "" ) ? DeserializeJson( task.retry_interval ) : [];
 		var maxAttempts   = 0;
 		var nextInterval  = 0;
-		var totalAttempts = Val( task.attempt_count ) + 1;
+		var totalAttempts = arguments.forceRetry ? Val( task.attempt_count ) : Val( task.attempt_count ) + 1;
 		var info          = {
 			  totalAttempts   = totalAttempts
 			, nextAttemptDate = ""
 		};
+
+		if ( arguments.forceRetry ) {
+			info.nextAttemptDate = DateTimeFormat( DateAdd( "n", 1, _now() ), "yyyy-mm-dd HH:nn:ss" );
+			return info;
+		}
 
 		for( var interval in retryConfig ) {
 			maxAttempts += Val( interval.tries ?: "" );
@@ -508,17 +528,35 @@ component displayName="Ad-hoc Task Manager Service" {
 		return Round( Val( arguments.input ) * secondsInADay );
 	}
 
-	private void function _runTaskInNewRequest( required string taskId ) {
-		var event         = $getRequestContext();
-		var taskRunnerUrl = event.buildLink( linkto="taskmanager.runtasks.adhocTask" );
+	private void function _setRequestState( required struct requestState ){
+		var event = $getRequestContext();
 
-		if ( taskRunnerUrl.reFindNoCase( "^https" ) && !$isFeatureEnabled( "sslInternalHttpCalls" ) ) {
-			taskRunnerUrl = taskRunnerUrl.reReplaceNoCase( "^https", "http" );
+		if ( Len( Trim( requestState.site ?: "" ) ) ) {
+			event.setSite( _getSiteService().getSite( requestState.site ) );
+		} else if ( $isFeatureEnabled( "sites" ) ) {
+			var siteContext = $getPresideSetting( "taskmanager", "site_context" );
+
+			if ( Len( Trim( siteContext ) ) ) {
+				event.setSite( _getSiteService().getSite( siteContext ) );
+			} else {
+				event.autoSetSiteByHost();
+			}
 		}
 
-		http url=taskRunnerUrl method="post" timeout=2 throwonerror=true {
-			httpparam name="taskId" value=arguments.taskId type="formfield";
+		if ( Len( Trim( requestState.language ?: "" ) ) ) {
+			event.setLanguage( requestState.language );
 		}
+	}
+
+	private struct function _addRequestStateArgs( required struct args ) {
+		var event = $getRequestContext();
+
+		args.__requestState = {
+			  site     = event.getSiteId()
+			, language = event.getLanguage()
+		}
+
+		return args;
 	}
 
 // GETTERS AND SETTERS
@@ -541,5 +579,12 @@ component displayName="Ad-hoc Task Manager Service" {
 	}
 	private void function _setThreadUtil( required any threadUtil ) {
 		_threadUtil = arguments.threadUtil;
+	}
+
+	private any function _getExecutor() {
+	    return _executor;
+	}
+	private void function _setExecutor( required any executor ) {
+	    _executor = arguments.executor;
 	}
 }

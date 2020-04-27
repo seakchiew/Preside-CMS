@@ -211,7 +211,7 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 					  id              = { type="string", dbtype="varchar", maxlength=35 }
 					, datecreated     = { type="date" }
 					, longtext        = { type="string", dbtype="text" }
-					, anotherlongtext = { type="string", dbtype="varchar", maxlength=201 }
+					, anotherlongtext = { type="string", dbtype="varchar", maxlength=801 }
 					, numberField     = { type="numeric", dbtype="int" }
 					, manyToOneField  = { relationship="many-to-one" }
 					, oneToManyField  = { relationship="one-to-many" }
@@ -274,6 +274,7 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 
 		service.$( "$getPresideObjectService", mockPresideObjectService );
 		service.$( "$getColdbox", mockColdbox );
+		service.$( "$announceInterception" );
 
 		return service;
 	}
