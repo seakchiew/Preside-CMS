@@ -661,34 +661,43 @@ component displayName="AssetManager Service" {
 	 * Adds an asset into the Asset manager. The asset binary will be uploaded to the appropriate storage
 	 * location for the given folder.
 	 *
-	 * @autodoc
-	 * @fileBinary.hint        Binary data of the file
+	 * @autodoc                true
+	 * @fileBinary.hint        Binary data of the file (instead of filePath)
+	 * @filePath.hint          Path to local file (instead of fileBinary)
 	 * @fileName.hint          Uploaded filename (asset type information will be retrieved from here)
 	 * @folder.hint            Either folder ID or name of a configured system folder
 	 * @assetData.hint         Structure of additional data that can be saved against the [[presideobject-asset]] record
 	 * @ensureUniqueTitle.hint If set to true (default is false), asset titles will be made unique should name conflicts exist
+	 * @fileSize.hint          Size, in bytes, of the file
 	 *
 	 */
 	public string function addAsset(
-		  required binary  fileBinary
+		           binary  fileBinary
+		,          string  filePath          = ""
 		, required string  fileName
 		, required string  folder
 		,          struct  assetData         = {}
 		,          boolean ensureUniqueTitle = false
+		,          boolean ignoreAudit       = false
+		,          numeric fileSize          = 0
 	) {
 		var fileTypeInfo = getAssetType( filename=arguments.fileName, throwOnMissing=true );
 		var asset        = Duplicate( arguments.assetData );
-		var fileMetaInfo = _getDocumentMetadataService().getMetaData( arguments.fileBinary );
+		var fileMetaInfo = _getFileMeta( argumentCollection=arguments );
 		var fileWidth    = fileMetaInfo.width  ?: 0;
 		var fileHeight   = fileMetaInfo.height ?: 0;
 
-		asset.id               = CreateUUId();
+		asset.id               = asset.id ?: CreateUUId();
 		asset.asset_folder     = resolveFolderId( arguments.folder );
 		asset.asset_type       = fileTypeInfo.typeName;
-		asset.size             = asset.size  ?: Len( arguments.fileBinary );
+		asset.size             = asset.size  ?: arguments.fileSize;
 		asset.title            = asset.title ?: arguments.fileName;
 		asset.file_name        = asset.file_name ?: _slugifyTitleForFileName( asset.title );
 		asset.storage_path     = "/#LCase( asset.id )#/#asset.file_name#.#fileTypeInfo.extension#";
+
+		if ( !asset.size && StructKeyExists( arguments, "fileBinary" ) ) {
+			asset.size = Len( arguments.fileBinary );
+		}
 
 		isAssetAllowedInFolder(
 			  type       = asset.asset_type
@@ -703,22 +712,29 @@ component displayName="AssetManager Service" {
 			asset.title = _ensureUniqueTitle( asset.title, asset.asset_folder );
 		}
 
-		getStorageProviderForFolder( asset.asset_folder ).putObject(
-			  object  = arguments.fileBinary
-			, path    = asset.storage_path
-			, private = isFolderAccessRestricted( asset.asset_folder )
-		);
+		var sp = getStorageProviderForFolder( asset.asset_folder );
+
+		if ( Len( arguments.filePath ) && _providerSupportsFileSystem( sp ) ) {
+			sp.putObjectFromLocalPath(
+				  localPath = arguments.filePath
+				, path      = asset.storage_path
+				, private   = isFolderAccessRestricted( asset.asset_folder )
+			);
+		} else {
+			sp.putObject(
+				  object  = arguments.fileBinary ?: FileReadBinary( arguments.filePath )
+				, path    = asset.storage_path
+				, private = isFolderAccessRestricted( asset.asset_folder )
+			);
+		}
 
 		if ( !Len( Trim( asset.title ) ) ) {
 			asset.title = arguments.fileName;
 		}
 
-		if ( _autoExtractDocumentMeta() ) {
-			asset.raw_text_content = _getDocumentMetadataService().getText( arguments.fileBinary );
-		}
-
 		if ( fileTypeInfo.groupName == "image" ) {
-			asset.append( _getImageInfo( arguments.fileBinary ) );
+			asset.width  = fileWidth;
+			asset.height = fileHeight;
 		}
 
 		if ( not Len( Trim( asset.asset_folder ) ) ) {
@@ -733,18 +749,30 @@ component displayName="AssetManager Service" {
 
 		_autoQueueDerivatives( asset.id, fileTypeInfo.typeName, fileTypeInfo.groupName );
 
-		$audit(
-			  action   = "add_asset"
-			, type     = "assetmanager"
-			, detail   = asset
-			, recordId = asset.id
-		);
+		if ( !arguments.ignoreAudit ){
+			$audit(
+				  action   = "add_asset"
+				, type     = "assetmanager"
+				, detail   = asset
+				, recordId = asset.id
+			);
+		}
 
 		return asset.id;
 	}
 
-	public boolean function addAssetVersion( required string assetId, required binary fileBinary, required string fileName, boolean makeActive=true  ) {
-		var originalAsset = getAsset( id=arguments.assetId, selectFields=[ "id", "title", "file_name", "asset_type", "asset_folder", "focal_point", "crop_hint", "access_restriction" ] );
+	public boolean function addAssetVersion(
+		  required string  assetId
+		,          binary  fileBinary
+		, required string  fileName
+		,          boolean makeActive = true
+		,          string  filePath    = ""
+		,          numeric fileSize    = Len( arguments.fileBinary ?: "" )
+	) {
+		var originalAsset = getAsset(
+			  id           = arguments.assetId
+			, selectFields = [ "id", "title", "file_name", "asset_type", "asset_folder", "focal_point", "crop_hint", "access_restriction" ]
+		);
 
 		if( !originalAsset.recordCount ) {
 			return false;
@@ -752,7 +780,6 @@ component displayName="AssetManager Service" {
 
 		var originalFileTypeInfo = getAssetType( name=originalAsset.asset_type, throwOnMissing=true );
 		var fileTypeInfo         = getAssetType( filename=arguments.fileName, throwOnMissing=true );
-
 		if ( fileTypeInfo.mimeType != originalFileTypeInfo.mimeType ) {
 			throw( type="AssetManager.mismatchedMimeType", message="The mime type of the uploaded file, [#fileTypeInfo.mimeType#], does not match that of the original version [#originalFileTypeInfo.mimeType#]." );
 		}
@@ -765,21 +792,27 @@ component displayName="AssetManager Service" {
 			, asset          = arguments.assetId
 			, asset_type     = fileTypeInfo.typeName
 			, storage_path   = newFileName
-			, size           = Len( arguments.fileBinary )
+			, size           = arguments.fileSize
 			, focal_point    = originalAsset.focal_point
 			, crop_hint      = originalAsset.crop_hint
 			, version_number = _getNextAssetVersionNumber( arguments.assetId )
 		};
 
-		if ( _autoExtractDocumentMeta() ) {
-			assetVersion.raw_text_content = _getDocumentMetadataService().getText( arguments.fileBinary );
-		}
+		var sp = getStorageProviderForFolder( originalAsset.asset_folder );
 
-		getStorageProviderForFolder( originalAsset.asset_folder ).putObject(
-			  object  = arguments.fileBinary
-			, path    = newFileName
-			, private = originalAsset.access_restriction == "full" || isFolderAccessRestricted( originalAsset.asset_folder )
-		);
+		if ( Len( arguments.filePath ) && _providerSupportsFileSystem( sp ) ) {
+			sp.putObjectFromLocalPath(
+				  localPath = arguments.filePath
+				, path      = newFileName
+				, private   = originalAsset.access_restriction == "full" || isFolderAccessRestricted( originalAsset.asset_folder )
+			);
+		} else {
+			sp.putObject(
+				  object  = arguments.fileBinary ?: FileReadBinary( arguments.filePath )
+				, path    = newFileName
+				, private = originalAsset.access_restriction == "full" || isFolderAccessRestricted( originalAsset.asset_folder )
+			);
+		}
 
 		_getAssetVersionDao().insertData( data=assetVersion );
 
@@ -791,7 +824,7 @@ component displayName="AssetManager Service" {
 			_saveAssetMetaData(
 				  assetId   = arguments.assetId
 				, versionId = versionId
-				, metaData  = _getDocumentMetadataService().getMetaData( arguments.fileBinary )
+				, metaData  = _getFileMeta( argumentCollection=arguments )
 			);
 		}
 
@@ -1013,21 +1046,122 @@ component displayName="AssetManager Service" {
 		return false;
 	}
 
-	public boolean function restoreAssets( required array assetIds, required string folderId ) {
-		var folder             = getFolder( arguments.folderId );
-		var restoredAssetCount = 0;
+	public boolean function moveAssetsInBgThread(
+		  required array  assetIds
+		, required string toFolder
+		,          any    logger
+		,          any    progress
+	) {
+		var canLog      = StructKeyExists( arguments, "logger" );
+		var canInfo     = canLog && arguments.logger.canInfo();
+		var canProgress = StructKeyExists( arguments, "progress" );
+		var folder      = getFolder( arguments.toFolder );
 
 		if ( folder.recordCount ) {
-			areAssetsAllowedInFolder(
-				  assetIds   = arguments.assetIds
-				, folderId   = arguments.folderId
-				, throwIfNot = true
-				, restore    = true
+			try {
+				areAssetsAllowedInFolder(
+					  assetIds   = arguments.assetIds
+					, folderId   = arguments.toFolder
+					, throwIfNot = true
+				);
+			} catch( any e ) {
+				if ( canLog ) {
+					arguments.logger.error( e );
+				}
+				$raiseError( e );
+
+				if ( canProgress ) {
+					arguments.progress.failTask( e );
+				}
+				return false;
+			}
+
+			var i = 0;
+			for( var assetId in arguments.assetIds ) {
+				if ( canInfo ) {
+					arguments.logger.info( $translateResource( uri="cms:assetmanager.moving.asset.log.info", data=[ $renderLabel( "asset", assetId ) ] ) );
+				}
+				var result = _getAssetDao().updateData(
+					  id   = assetId
+					, data = { asset_folder = arguments.toFolder }
+				);
+				try {
+					ensureAssetsAreInCorrectLocation( assetId=assetId );
+				} catch( any e ) {
+					$raiseError( e );
+					if ( canLog ) {
+						arguments.logger.error( "Failed to ensure files stored in the correct location. See error below." );
+						arguments.logger.error( e );
+					}
+				}
+
+				if ( canProgress ) {
+					arguments.progress.setProgress( Int( ( 100 / ArrayLen( arguments.assetIds ) ) * ++i ) );
+				}
+			}
+			if ( canProgress ) {
+				arguments.progress.setProgress( 100 );
+			}
+
+			$audit(
+				  action = "move_assets"
+				, type   = "assetmanager"
+				, detail = arguments
 			);
 
+			return result;
+		}
+
+		return false;
+	}
+
+	public boolean function restoreAssets(
+		  required array   assetIds
+		, required string  folderId
+		,          boolean skipErrors = false
+		,          any     logger
+		,          any     progress
+	) {
+		var folder             = getFolder( arguments.folderId );
+		var assetCount         = ArrayLen( arguments.assetIds );
+		var restoredAssetCount = 0;
+		var canReportProgress  = StructKeyExists( arguments, "logger" );
+		var canLog             = StructKeyExists( arguments, "progress" );
+		var canInfo            = canLog && arguments.logger.canInfo();
+		var canError           = canLog && arguments.logger.canError();
+
+		if ( folder.recordCount ) {
+			try {
+				areAssetsAllowedInFolder(
+					  assetIds   = arguments.assetIds
+					, folderId   = arguments.folderId
+					, throwIfNot = true
+					, restore    = true
+				);
+			} catch( any e ) {
+				if ( arguments.skipErrors ) {
+					if ( canError ) {
+						arguments.logger.error( $translateResource( "cms:assetmanager.restore.assets.task.error.log" ) );
+						arguments.logger.error( e );
+					}
+					return false;
+				}
+
+				rethrow;
+			}
+
+			var i=0;
 			for( var assetId in arguments.assetIds ) {
 				var asset = getAsset( id=assetId, selectFields=[ "original_title", "file_name", "asset_type", "trashed_path", "asset_folder", "active_version" ] );
+
 				if ( asset.recordCount ) {
+					if ( canInfo ) {
+						arguments.logger.info( $translateResource(
+							  uri  = "cms:assetmanager.restore.assets.task.restoring.asset.log"
+							, data = [ asset.original_title, folder.label ]
+						) );
+					}
+
 					var fileName        = Len( Trim( asset.file_name ) ) ? asset.file_name : _slugifyTitleForFileName( asset.original_title );
 					var newPath         = "/#LCase( assetId )#/#fileName#.#asset.asset_type#";
 					var storageProvider = getStorageProviderForFolder( asset.asset_folder );
@@ -1055,7 +1189,9 @@ component displayName="AssetManager Service" {
 						, trashed_path   = ""
 					} );
 
-
+					if ( canReportProgress ) {
+						arguments.progress.setProgress( Int( ( 100 / assetCount ) * ++i ) );
+					}
 				}
 			}
 
@@ -1109,12 +1245,13 @@ component displayName="AssetManager Service" {
 		);
 	}
 
-	public binary function getAssetBinary(
+	public any function getAssetBinary(
 		  required string  id
-		,          string  versionId             = ""
-		,          boolean throwOnMissing        = false
-		,          boolean isTrashed             = false
-		,          boolean placeholderIfTooLarge = false
+		,          string  versionId              = ""
+		,          boolean throwOnMissing         = false
+		,          boolean isTrashed              = false
+		,          boolean placeholderIfTooLarge  = false
+		,          boolean getFilePathIfSupported = false
 	) {
 		var assetBinary = "";
 		var isPrivate   = isAssetAccessRestricted( arguments.id )
@@ -1125,14 +1262,117 @@ component displayName="AssetManager Service" {
 
 		if ( asset.recordCount ) {
 			if ( arguments.placeholderIfTooLarge && assetIsTooLargeForDerivatives( asset.width, asset.height ) ) {
+				if ( arguments.getFilePathIfSupported ) {
+					return _getLargeImagePlaceholderPath();
+				}
 				return _getLargeImagePlaceholder();
 			}
-			return getStorageProviderForFolder( asset.asset_folder ).getObject(
+
+			var sp = getStorageProviderForFolder( asset.asset_folder );
+
+			if ( arguments.getFilePathIfSupported && _providerSupportsFileSystem( sp ) ) {
+				return sp.getObjectLocalPath(
+					  path    = asset.storage_path
+					, trashed = arguments.isTrashed
+					, private = isPrivate
+				);
+			}
+			return sp.getObject(
 				  path    = asset.storage_path
 				, trashed = arguments.isTrashed
 				, private = isPrivate
 			);
 		}
+	}
+
+	/**
+	 * Returns the width and height of the specified asset, optionally for a particular derivative.
+	 * If the derivative has not yet been generated, the dimensions are calculated from the derivative config,
+	 * but _should_ be the same as when the derivative is created,
+	 *
+	 * @autodoc
+	 * @id.hint                  The asset ID
+	 * @derivativeName.hint      Derivative for which to get the dimensions
+	 * @versionId.hint           Specific version of the asset
+	 *
+	 */
+	public struct function getAssetDimensions( required string id, string derivativeName="", string versionId="" ) {
+		var version = Len( Trim( arguments.versionId ) ) ? arguments.versionId : getActiveAssetVersion( arguments.id );
+		var asset   = queryNew("");
+
+		if ( Len( Trim( arguments.derivativeName ) ) ) {
+			asset = getAssetDerivative(
+				  assetId           = arguments.id
+				, derivativeName    = arguments.derivativeName
+				, selectFields      = [ "asset_derivative.width", "asset_derivative.height" ]
+				, versionId         = version
+				, createIfNotExists = false
+			);
+			if ( asset.recordCount && isNumeric( asset.width ) && isNumeric( asset.height ) ) {
+				return { width=asset.width, height=asset.height };
+			}
+		}
+
+		if ( Len( Trim( version ) ) ) {
+			asset = getAssetVersion(
+				  assetId      = arguments.id
+				, versionId    = version
+				, selectFields = [ "asset_version.width", "asset_version.height" ]
+			);
+		} else {
+			asset = getAsset(
+				  id           = arguments.id
+				, selectFields = [ "width", "height" ]
+			);
+		}
+
+		if ( asset.recordCount && isNumeric( asset.width ) && isNumeric( asset.height ) ) {
+			if ( Len( Trim( arguments.derivativeName ) ) ) {
+				return _estimateDerivativeDimensions( asset.width, asset.height, arguments.derivativeName );
+			}
+			return { width=asset.width, height=asset.height };
+		}
+
+		return {};
+	}
+
+	private struct function _estimateDerivativeDimensions( required numeric width, required numeric height, required string derivativeName ) {
+		var transformations = _getPreconfiguredDerivativeTransformations( arguments.derivativeName );
+
+		for( var transformation in transformations.reverse() ) {
+			var transformArgs = transformation.args ?: {};
+
+			if ( transformation.method == "resize" ) {
+				var targetWidth  = val( transformArgs.width  ?: "" );
+				var targetHeight = val( transformArgs.height ?: "" );
+				if ( targetWidth > 0 && targetHeight > 0 ) {
+					return { width=targetWidth, height=targetHeight };
+				} else if ( targetWidth > 0 ) {
+					return { width=targetWidth, height=round( arguments.height * ( targetWidth / arguments.width ) ) };
+				} else if ( targetHeight > 0 ) {
+					return { width=round( arguments.width * ( targetHeight / arguments.height ) ), height=targetHeight };
+				}
+			}
+			if ( transformation.method == "shrinkToFit" ) {
+				var currentAspectRatio = arguments.width / arguments.height;
+				var targetAspectRatio  = transformArgs.width / transformArgs.height;
+				var requiresShrinking  = arguments.width > transformArgs.width || arguments.height > transformArgs.height;
+
+				if ( requiresShrinking ) {
+					if ( targetAspectRatio == currentAspectRatio ) {
+						return { width=transformArgs.width, height=transformArgs.height };
+					} else if ( currentAspectRatio > targetAspectRatio ) {
+						return { width=transformArgs.width, height=round( transformArgs.height / currentAspectRatio ) };
+					} else {
+						return { width=round( transformArgs.width * currentAspectRatio ), height=transformArgs.height };
+					}
+				} else {
+					return { width=arguments.width, height=arguments.height };
+				}
+			}
+		}
+
+		return {};
 	}
 
 	public string function getAssetEtag( required string id, string derivativeName="", string versionId="", string configHash="", boolean throwOnMissing=false, boolean isTrashed=false ) {
@@ -1231,8 +1471,8 @@ component displayName="AssetManager Service" {
 				_getAssetQueueService().queueAssetGeneration(
 					  assetId        = arguments.assetId
 					, derivativeName = arguments.derivativeName
-					, versionId      = arguments.versionId
-					, configHash     = arguments.configHash ?: ""
+					, versionId      = version
+					, configHash     = configHash
 				);
 			}
 
@@ -1342,6 +1582,7 @@ component displayName="AssetManager Service" {
 			$raiseError( e );
 			trashedPath = asset.storage_path;
 		}
+
 
 		if( asset.active_version.len() ) {
 			_getAssetVersionDao().updateData(
@@ -1506,7 +1747,13 @@ component displayName="AssetManager Service" {
 		return QueryNew( '' );
 	}
 
-	public binary function getAssetDerivativeBinary( required string assetId, required string derivativeName, string versionId="", string configHash="" ) {
+	public any function getAssetDerivativeBinary(
+		  required string  assetId
+		, required string  derivativeName
+		,          string  versionId              = ""
+		,          string  configHash             = ""
+		,          boolean getFilePathIfSupported = false
+	) {
 		var derivative = getAssetDerivative(
 			  assetId        = arguments.assetId
 			, derivativeName = arguments.derivativeName
@@ -1516,12 +1763,22 @@ component displayName="AssetManager Service" {
 		);
 
 		if ( derivative.recordCount ) {
-			return getStorageProviderForFolder( derivative.asset_folder ).getObject(
+			var sp = getStorageProviderForFolder( derivative.asset_folder );
+
+			if ( arguments.getFilePathIfSupported && _providerSupportsFileSystem( sp ) ) {
+				return sp.getObjectLocalPath(
+					  path    = derivative.storage_path
+					, private = !isDerivativePubliclyAccessible( arguments.derivativeName ) && isAssetAccessRestricted( arguments.assetId )
+				);
+			}
+
+			return sp.getObject(
 				  path    = derivative.storage_path
 				, private = !isDerivativePubliclyAccessible( arguments.derivativeName ) && isAssetAccessRestricted( arguments.assetId )
 			);
 		}
 	}
+
 
 	public string function createAssetDerivativeWhenNotExists(
 		  required string assetId
@@ -1781,6 +2038,8 @@ component displayName="AssetManager Service" {
 				, "asset_version.size"
 				, "asset_version.asset_type"
 				, "asset_version.raw_text_content"
+				, "asset_version.width"
+				, "asset_version.height"
 				, "asset_version.focal_point"
 				, "asset_version.crop_hint"
 				, "asset_version.created_by"
@@ -1792,8 +2051,22 @@ component displayName="AssetManager Service" {
 		);
 
 		if ( versionToMakeActive.recordCount ) {
-			var versionImageDimension = _getImageInfo( getAssetBinary( arguments.assetId, arguments.versionId ) );
-			var generatedAssetUrl     = generateAssetUrl(
+			var versionWidth  = versionToMakeActive.width;
+			var versionHeight = versionToMakeActive.height;
+
+			if ( !val( versionWidth ) || !val( versionHeight ) ) {
+				var versionImageDimension = _getImageInfo( getAssetBinary( id=arguments.assetId, versionId=arguments.versionId, getFilePathIfSupported=true ) );
+
+				versionWidth  = versionImageDimension.width  ?: "";
+				versionHeight = versionImageDimension.height ?: "";
+
+				_getAssetVersionDao().updateData(
+					  id   = arguments.versionId
+					, data = { width=versionWidth, height=versionHeight }
+				);
+			}
+
+			var generatedAssetUrl = generateAssetUrl(
 				  id          = arguments.assetId
 				, versionId   = arguments.versionId
 				, storagePath = versionToMakeActive.storage_path
@@ -1810,9 +2083,9 @@ component displayName="AssetManager Service" {
 				, crop_hint        = versionToMakeActive.crop_hint
 				, created_by       = versionToMakeActive.created_by
 				, updated_by       = versionToMakeActive.updated_by
-				, width            = versionImageDimension.width  ?: ""
-				, height           = versionImageDimension.height ?: ""
-				, asset_url 	   = generatedAssetUrl
+				, width            = versionWidth
+				, height           = versionHeight
+				, asset_url        = generatedAssetUrl
 			} );
 
 			invalidateRenderedAssetCache( arguments.assetId );
@@ -2164,6 +2437,7 @@ component displayName="AssetManager Service" {
 						, extension         = type.extension ?: typeName
 						, mimetype          = type.mimetype  ?: ""
 						, serveAsAttachment = IsBoolean( type.serveAsAttachment ?: "" ) && type.serveAsAttachment
+						, trackDownloads    = IsBoolean( type.trackDownloads    ?: "" ) && type.trackDownloads
 					};
 				}
 			}
@@ -2215,6 +2489,8 @@ component displayName="AssetManager Service" {
 			, "asset_type"
 			, "active_version"
 			, "raw_text_content"
+			, "width"
+			, "height"
 			, "focal_point"
 			, "crop_hint"
 			, "created_by"
@@ -2229,6 +2505,8 @@ component displayName="AssetManager Service" {
 				, size             = asset.size
 				, asset_type       = asset.asset_type
 				, raw_text_content = asset.raw_text_content
+				, width            = asset.width
+				, height           = asset.height
 				, focal_point      = asset.focal_point
 				, crop_hint        = asset.crop_hint
 				, created_by       = asset.created_by
@@ -2240,8 +2518,14 @@ component displayName="AssetManager Service" {
 	}
 
 	private struct function _getImageInfo( fileBinary ) {
+		var info = {};
 		try {
-			var info = ImageInfo( arguments.fileBinary );
+			if ( IsBinary(  arguments.fileBinary  ) ) {
+				info = ImageInfo( arguments.fileBinary );
+			} else {
+				info = JavaImageMetaReader::readMeta( arguments.fileBinary );
+			}
+
 			return {
 				  width  = Val( info.width  ?: 0 )
 				, height = Val( info.height ?: 0 )
@@ -2401,7 +2685,25 @@ component displayName="AssetManager Service" {
 	}
 
 	private binary function _getLargeImagePlaceholder() {
-		return FileReadBinary( ExpandPath( _getDerivativeLimits().tooBigPlaceholder ) );
+		return FileReadBinary( _getLargeImagePlaceholderPath() );
+	}
+
+	private string function _getLargeImagePlaceholderPath() {
+		return ExpandPath( _getDerivativeLimits().tooBigPlaceholder );
+	}
+
+	private boolean function _providerSupportsFileSystem( required any storageProvider ) {
+		return _getStorageProviderService().providerSupportsFileSystem( arguments.storageProvider );
+	}
+
+	private struct function _getFileMeta(
+		  binary fileBinary
+		, string filePath = ""
+	) {
+		if ( Len( Trim( arguments.filePath ) ) ) {
+			return _getDocumentMetadataService().getImageMetaDataFromFilePath( arguments.filePath );
+		}
+		return _getDocumentMetadataService().getMetaData( arguments.fileBinary );
 	}
 
 // GETTERS AND SETTERS

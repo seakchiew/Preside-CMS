@@ -360,6 +360,10 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		try {
 			return request._showNonLiveContent;
 		} catch( any e ) {
+			// we may get called very early in the request before this has been run.
+			// manually call it to ensure we have all the path info setup for the isAdminRequest() call, below
+			getController().getRoutingService().getCgiElement( "path_info", getRequestContext() );
+
 			if ( this.isAdminRequest() ) {
 				request._showNonLiveContent = true;
 			} else {
@@ -410,7 +414,16 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 	}
 
 	public string function getHTTPContent() {
-		return request.http.body ?: ToString( getHTTPRequestData().content );
+		if ( !StructKeyExists( request, "http" ) || !StructKeyExists( request.http, "body" ) ) {
+			request.http.body = ToString( GetHTTPRequestData().content );
+		}
+		return request.http.body;
+	}
+
+	function getHTTPHeader( required header, defaultValue="" ){
+		var headers = getHttpRequestData( false ).headers;
+
+		return headers[ arguments.header ] ?: arguments.defaultValue;
 	}
 
 	public void function initializeDatamanagerPage(
@@ -535,6 +548,13 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 			inlineJs[ arguments.group ] = [];
 
 			getRequestContext().setValue( name="__presideInlineJs", value=inlineJs, private=true );
+
+			if ( Find( "/preside/system/assets/_dynamic/i18nBundle.js", rendered ) ) {
+				var languageCode = instance.i18n.getFWLanguageCode();
+				var cachebuster  = instance.i18n.getI18nJsCachebusterForAdmin();
+
+				rendered = Replace( rendered, "/preside/system/assets/_dynamic/i18nBundle.js", "/preside/system/assets/_dynamic/i18nBundle.#languageCode#.#cachebuster#.js" );
+			}
 		}
 
 		return rendered;
@@ -621,16 +641,15 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 			var setting = getPageProperty( propertyName="iframe_restriction", cascading=true );
 			switch( setting ) {
 				case "allow":
-					return; // do not set any header
 				case "sameorigin":
-					arguments.value = "SAMEORIGIN";
+					arguments.value = setting;
 					break;
 				default:
 					arguments.value = "DENY";
 			}
 		}
 
-		this.setHTTPHeader( name="X-Frame-Options", value=arguments.value, overwrite=true );
+		getRequestContext().setValue( name="xframeoptions", value=UCase( arguments.value ), private=true );
 	}
 
 // FRONT END, dealing with current page
@@ -954,7 +973,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 // HTTP Header helpers
 	public string function getClientIp() {
-		var httpHeaders = getHttpRequestData().headers;
+		var httpHeaders = getHttpRequestData( false ).headers;
 		var clientIp    = httpHeaders[ "x-real-ip" ] ?: ( httpHeader[ "x-forwarded-for"] ?: cgi.remote_addr );
 
 		return Trim( ListFirst( clientIp ) );
@@ -994,6 +1013,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 		return getModel( "featureService" ).isFeatureEnabled( "fullPageCaching" )
 		    && !event.valueExists( "fwreinit" )
+		    && !this.isBackgroundThread()
 		    && !this.isAdminRequest()
 		    && !this.isAdminUser()
 		    && event.getHTTPMethod() == "GET"
@@ -1082,8 +1102,8 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 		var contentOutput = getModel( "presideRenderer" ).renderLayout();
 
-		contentOutput = getModel( "delayedStickerRendererService" ).renderDelayedStickerIncludes( contentOutput );
 		contentOutput = getModel( "delayedViewletRendererService" ).renderDelayedViewlets(        contentOutput );
+		contentOutput = getModel( "delayedStickerRendererService" ).renderDelayedStickerIncludes( contentOutput );
 		writeOutput( contentOutput );
 		abort;
 	}
@@ -1094,10 +1114,18 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 		var contentOutput = getModel( "presideRenderer" ).renderLayout();
 
-		contentOutput = getModel( "delayedStickerRendererService" ).renderDelayedStickerIncludes( contentOutput );
 		contentOutput = getModel( "delayedViewletRendererService" ).renderDelayedViewlets(        contentOutput );
+		contentOutput = getModel( "delayedStickerRendererService" ).renderDelayedStickerIncludes( contentOutput );
 		writeOutput( contentOutput );
 		abort;
+	}
+
+// Threading
+	public boolean function isBackgroundThread( boolean value ) {
+		if ( structKeyExists( arguments, "value" ) ) {
+			getRequestContext().setValue( name="_isBackgroundThread", value=arguments.value, private=true );
+		}
+		return getRequestContext().getValue( name="_isBackgroundThread", defaultValue=false, private=true );
 	}
 
 // REST framework

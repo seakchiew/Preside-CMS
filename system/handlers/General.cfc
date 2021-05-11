@@ -9,6 +9,8 @@ component {
 	property name="presideTaskmanagerHeartBeat"   inject="presideTaskmanagerHeartBeat";
 	property name="cacheboxReapHeartBeat"         inject="cacheboxReapHeartBeat";
 	property name="presideAdhocTaskHeartBeat"     inject="presideAdhocTaskHeartBeat";
+	property name="presideSessionReapHeartbeat"   inject="presideSessionReapHeartbeat";
+	property name="scheduledExportHeartBeat"      inject="scheduledExportHeartBeat";
 	property name="healthcheckService"            inject="healthcheckService";
 	property name="permissionService"             inject="permissionService";
 	property name="emailQueueConcurrency"         inject="coldbox:setting:email.queueConcurrency";
@@ -41,6 +43,11 @@ component {
 		_xssProtect( argumentCollection = arguments );
 		_reloadChecks( argumentCollection = arguments );
 		_recordUserVisits( argumentCollection = arguments );
+		_setLocale( argumentCollection = arguments );
+	}
+
+	public void function requestEnd( event, rc, prc ) {
+		_setXFrameOptionsHeader( argumentCollection = arguments );
 	}
 
 	public void function notFound( event, rc, prc ) {
@@ -191,6 +198,10 @@ component {
 		}
 	}
 
+	private void function _setLocale( event, rc, prc ) {
+		SetLocale( getModel( "i18n" ).getFwLocale() );
+	}
+
 	private void function _performDbMigrations() {
 		databaseMigrationService.migrate();
 	}
@@ -232,10 +243,18 @@ component {
 			presideTaskmanagerHeartBeat.start();
 		}
 
+		if ( isFeatureEnabled( "presideSessionManagement" ) ) {
+			presideSessionReapHeartbeat.start();
+		}
+
 		if ( isFeatureEnabled( "assetQueue" ) && isFeatureEnabled( "assetQueueHeartBeat" ) ) {
 			for( var i=1; i<=assetQueueConcurrency; i++ ) {
 				getModel( "AssetQueueHeartBeat#i#" ).start();
 			}
+		}
+
+		if ( isFeatureEnabled( "dataExport" ) && isFeatureEnabled( "scheduledExportHeartBeat" ) ) {
+			scheduledExportHeartBeat.start();
 		}
 
 		cacheboxReapHeartBeat.start();
@@ -260,6 +279,13 @@ component {
 
 			var rules = presideFieldRuleGenerator.generateRulesFromPresideObject( objName );
 			validationEngine.newRuleset( name="PresideObject.#objName#", rules=rules );
+		}
+	}
+
+	private void function _setXFrameOptionsHeader( event, rc, prc ) {
+		var xframeOptions = prc.xframeoptions ?: "DENY";
+		if ( xframeOptions != "ALLOW" ) {
+			event.setHTTPHeader( name="X-Frame-Options", value=UCase( xframeOptions ), overwrite=true );
 		}
 	}
 }

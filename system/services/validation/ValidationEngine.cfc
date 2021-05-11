@@ -52,7 +52,6 @@ component displayName="Validation Engine" {
 		for( rule in rules ){
 			var expandedFieldName = arguments.fieldNamePrefix & rule.fieldName & arguments.fieldNameSuffix;
 
-
 			if ( ( arguments.ignoreMissing && !StructKeyExists( arguments.data, rule.fieldName ) ) || ( arrayLen( arguments.suppressFields ) && arrayFind( arguments.suppressFields, rule.fieldName ) ) ) {
 				continue;
 			}
@@ -68,10 +67,17 @@ component displayName="Validation Engine" {
 				);
 
 				if ( !IsBoolean( fieldResult ) || !fieldResult ) {
+					var ruleParams = duplicate( rule.params );
+					for ( var key in ruleParams ) {
+						if( isNumeric( ruleParams[key] ) ) {
+							ruleParams[key] = $helpers.presideStandardNumberFormat( ruleParams[key] );
+						}
+					}
+
 					result.addError(
 						  fieldName = expandedFieldName
 						, message   = ( Len( Trim( rule.message ) ) ? rule.message : provider.getDefaultMessage( name=rule.validator ) )
-						, params    = provider.getValidatorParamValues( name=rule.validator, params=rule.params )
+						, params    = provider.getValidatorParamValues( name=rule.validator, params=ruleParams )
 					);
 				}
 			}
@@ -259,23 +265,53 @@ component displayName="Validation Engine" {
 		var params     = "";
 		var message    = "";
 
-		for( rule in arguments.rules ){
+		for( rule in arguments.rules ) {
 			var fieldName = arguments.fieldNamePrefix & rule.fieldName & arguments.fieldNameSuffix;
 
 			if ( not StructKeyExists( jsRules, fieldName ) ) {
 				jsRules[ fieldName ] = "";
 				jsMessages[ fieldName ] = "";
 			}
-			params  = validators[ rule.validator ].getValidatorParamValues( name=rule.validator, params=rule.params );
-			message = Len( Trim( rule.message ) ) ? rule.message : validators[ rule.validator ].getDefaultMessage( name=rule.validator );
 
-			jsRules[ fieldName ] = ListAppend( jsRules[ fieldName ], ' "#LCase( rule.validator )#" : { param : #_parseParamsForJQueryValidate( params, rule.validator )#' );
+			var params  = validators[ rule.validator ].getValidatorParamValues( name=rule.validator, params=rule.params );
+			var message = Len( Trim( rule.message ) ) ? rule.message : validators[ rule.validator ].getDefaultMessage( name=rule.validator );
+
+			var validator = LCase( rule.validator );
+			var data      = duplicate( params );
+
+			switch( validator ) {
+				case "fileType":
+					validator = "extension";
+
+					for( var index = 1; index <= data.len(); index++ ) {
+						data[index] = Replace( data[index], ",", ", ", "all")
+					}
+
+					jsRules[ fieldName ] = ListAppend( jsRules[ fieldName ], '"accept" : false' );
+					break;
+
+				case "date":
+					validator = "dateISO";
+					break;
+
+				default:
+					break;
+			}
+
+			jsRules[ fieldName ] = ListAppend( jsRules[ fieldName ], ' "#validator#" : { param : #_parseParamsForJQueryValidate( params, validator )#' );
+
 			if ( Len( Trim( rule.clientCondition ) ) ) {
 				jsRules[ fieldName ] &= ", depends : " & _generateClientCondition( rule.clientCondition );
 			}
 			jsRules[ fieldName ] &= ' }';
 
-			jsMessages[ fieldName ] = ListAppend( jsMessages[ fieldName ], ' "#LCase( rule.validator )#" : #SerializeJson( $translateResource( uri=message, data=params ) )#' );
+			for ( var index = 1; index <= params.len(); index++ ) {
+				if( isNumeric( params[index] ) ) {
+					params[index] = $helpers.presideStandardNumberFormat( params[index] );
+				}
+			}
+
+			jsMessages[ fieldName ] = ListAppend( jsMessages[ fieldName ], ' "#validator#" : #SerializeJson( $translateResource( uri=message, data=data ) )#' );
 		}
 
 		for( rule in arguments.rules ){
@@ -336,6 +372,9 @@ component displayName="Validation Engine" {
 			case "minLength":
 			case "maxLength":
 				return ArrayLen( params ) ? Val( params[1] ) : 0;
+
+			case "extension":
+				return SerializeJson( ListRemoveDuplicates( ArrayToList( params ) ) );
 
 			default:
 				return SerializeJson( params );
