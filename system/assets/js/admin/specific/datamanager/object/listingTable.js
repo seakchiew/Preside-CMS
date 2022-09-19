@@ -23,29 +23,37 @@
 			  , dtSettings
 			  , getFavourites
 			  , setFavourites
-			  , object              = tableSettings.objectName        || cfrequest.objectName     || ""
-			  , datasourceUrl       = tableSettings.datasourceUrl     || cfrequest.datasourceUrl  || buildAjaxLink( "dataManager.getObjectRecordsForAjaxDataTables", { id : object } )
-			  , isMultilingual      = tableSettings.isMultilingual    || cfrequest.isMultilingual || false
-			  , draftsEnabled       = tableSettings.draftsEnabled     || cfrequest.draftsEnabled  || false
-			  , object              = tableSettings.objectName        || cfrequest.objectName     || ""
-			  , objectTitle         = tableSettings.objectTitle       || cfrequest.objectTitle    || i18n.translateResource( "preside-objects." + object + ":title" )
-			  , allowSearch         = tableSettings.allowSearch       || cfrequest.allowSearch
-			  , allowFilter         = tableSettings.allowFilter       || cfrequest.allowFilter
-			  , allowDataExport     = tableSettings.allowDataExport   || cfrequest.allowDataExport
-			  , allowSaveExport     = tableSettings.allowSaveExport   || cfrequest.allowSaveExport
-			  , noRecordMessage     = tableSettings.noRecordMessage   || i18n.translateResource( "cms:datatables.emptyTable" )
-			  , favouritesUrl       = tableSettings.favouritesUrl     || cfrequest.favouritesUrl || buildAjaxLink( "rulesEngine.ajaxDataGridFavourites", { objectName : object } )
-			  , compact             = tableSettings.compact           || cfrequest.compact
-			  , defaultPageLength   = cfrequest.defaultPageLength     || 10
-			  , clickableRows       = typeof tableSettings.clickableRows   === "undefined" ? ( typeof cfrequest.clickableRows   === "undefined" ? true : cfrequest.clickableRows   ) : tableSettings.clickableRows
-			  , noActions           = typeof tableSettings.noActions       === "undefined" ? ( typeof cfrequest.noActions       === "undefined" ? false: cfrequest.noActions       ) : tableSettings.noActions
-			  , useMultiActions     = typeof tableSettings.useMultiActions === "undefined" ? ( typeof cfrequest.useMultiActions === "undefined" ? true : cfrequest.useMultiActions ) : tableSettings.useMultiActions
-			  , $filterDiv          = $( '#' + tableId + '-filter' )
-			  , $favouritesDiv      = $( '#' + tableId + '-favourites' )
+			  , updateSelectAllOptionRecordCount
+			  , activateSelectAllOption
+			  , deactivateSelectAllOption
+			  , object                   = tableSettings.objectName               || cfrequest.objectName     || ""
+			  , datasourceUrl            = tableSettings.datasourceUrl            || cfrequest.datasourceUrl  || buildAjaxLink( "dataManager.getObjectRecordsForAjaxDataTables", { id : object } )
+			  , isMultilingual           = tableSettings.isMultilingual           || cfrequest.isMultilingual || false
+			  , draftsEnabled            = tableSettings.draftsEnabled            || cfrequest.draftsEnabled  || false
+			  , object                   = tableSettings.objectName               || cfrequest.objectName     || ""
+			  , objectTitle              = tableSettings.objectTitle              || cfrequest.objectTitle    || i18n.translateResource( "preside-objects." + object + ":title" )
+			  , allowSearch              = tableSettings.allowSearch              || cfrequest.allowSearch
+			  , allowFilter              = tableSettings.allowFilter              || cfrequest.allowFilter
+			  , allowDataExport          = tableSettings.allowDataExport          || cfrequest.allowDataExport
+			  , allowSaveExport          = tableSettings.allowSaveExport          || cfrequest.allowSaveExport
+			  , noRecordMessage          = tableSettings.noRecordMessage          || i18n.translateResource( "cms:datatables.emptyTable" )
+			  , noRecordTableHide        = tableSettings.noRecordTableHide        || false
+			  , noRecordTableHideMessage = tableSettings.noRecordTableHideMessage || i18n.translateResource( "cms:preside-objects.default.field.no_value.title" )
+			  , favouritesUrl            = tableSettings.favouritesUrl            || cfrequest.favouritesUrl || buildAjaxLink( "rulesEngine.ajaxDataGridFavourites", { objectName : object } )
+			  , compact                  = tableSettings.compact                  || cfrequest.compact
+			  , defaultPageLength        = cfrequest.defaultPageLength            || 10
+			  , paginationOptions        = cfrequest.paginationOptions            || [ 5, 10, 25, 50, 100 ]
+			  , clickableRows            = typeof tableSettings.clickableRows   === "undefined" ? ( typeof cfrequest.clickableRows   === "undefined" ? true : cfrequest.clickableRows   ) : tableSettings.clickableRows
+			  , noActions                = typeof tableSettings.noActions       === "undefined" ? ( typeof cfrequest.noActions       === "undefined" ? false: cfrequest.noActions       ) : tableSettings.noActions
+			  , useMultiActions          = typeof tableSettings.useMultiActions === "undefined" ? ( typeof cfrequest.useMultiActions === "undefined" ? true : cfrequest.useMultiActions ) : tableSettings.useMultiActions
+			  , $filterDiv               = $( '#' + tableId + '-filter' )
+			  , $favouritesDiv           = $( '#' + tableId + '-favourites' )
 			  , $filterLink
 			  , enabledContextHotkeys, refreshFavourites
 			  , lastAjaxResult
 			  , filterSettings, allowUseFilter=false, allowManageFilter=false, manageFiltersLink=""
+			  , filtersPopulated=false
+			  , hasPreFilters=false;
 
 			if ( allowFilter ) {
 				filterSettings = $( ".object-listing-table-filter" ).data();
@@ -133,7 +141,7 @@
 				} else if ( compact ) {
 					sDom = "frt<'dataTables_pagination bottom'<'pull-left'i><'pull-left'l><'pull-right'p><'clearfix'>";
 				} else {
-					sDom = "fr<'dataTables_pagination top'<'pull-left'i><'pull-left'l><'pull-right'p>>t<'dataTables_pagination bottom'<'pull-left'i><'pull-left'l><'pull-right'p><'clearfix'>";
+					sDom = "fr<'dataTables_pagination top clearfix'<'pull-left'i><'pull-left'l><'pull-right'p>><'datatable-container't><'dataTables_pagination bottom'<'pull-left'i><'pull-left'l><'pull-right'p><'clearfix'>";
 				}
 
 				datatable = $listingTable.dataTable( {
@@ -147,7 +155,7 @@
 					iDeferLoading : 0,
 					bAutoWidth    : false,
 					iDisplayLength: parseInt( defaultPageLength ),
-					aLengthMenu   : [ 5, 10, 25, 50, 100 ],
+					aLengthMenu   : paginationOptions,
 					sDom          : sDom,
 					sAjaxSource   : datasourceUrl,
 					fnRowCallback : function( row ){
@@ -189,7 +197,9 @@
 							setupDataExport( settings );
 						}
 
-						this.fnDraw();
+						if ( !hasPreFilters ) {
+							this.fnDraw();
+						}
 					},
 					oLanguage : {
 						oAria : {
@@ -226,6 +236,9 @@
 							}
 						}
 					},
+					fnFiltersPopulatedCallback: function() {
+						return allowFilter ? filtersPopulated : true;
+					},
 					fnCookieCallback: function( sName, oData, sExpires, sPath ) {
 						if ( allowFilter ) {
 							oData.oFilter = {
@@ -240,8 +253,9 @@
 					fnPreDrawCallback : function() {
 						$( ".datatable-container" ).presideLoadingSheen( true );
 					},
-					fnDrawCallback : function() {
+					fnDrawCallback : function( dt ) {
 						$( ".datatable-container" ).presideLoadingSheen( false );
+						updateSelectAllOptionRecordCount( dt.fnFormatNumber( dt._iRecordsTotal ) );
 					},
 					fnFooterCallback: function ( nRow, aaData, iStart, iEnd, aiDisplay ) {
 						if ( $( nRow ).length ) {
@@ -256,6 +270,26 @@
 
 				$listingTable.on( "xhr", function( event, settings, json ){
 					lastAjaxResult = json;
+
+					if ( noRecordTableHide ) {
+						var searchQuery = "";
+
+						if ( allowSearch ) {
+							searchQuery = $( dtSettings.aanFeatures.f[0] ).find( "input.data-table-search" ).val();
+						}
+
+						if ( searchQuery.length == 0 ) {
+							var iTotalRecords = json.iTotalRecords || 0;
+
+							if ( iTotalRecords == 0 ) {
+								var $tableContainer = $( "#"+tableId+"-container" );
+
+								$tableContainer.parent().append( noRecordTableHideMessage );
+
+								$tableContainer.hide();
+							}
+						}
+					}
 				} );
 			};
 
@@ -264,16 +298,23 @@
 				  , $multiActionBtns = $listingTable.closest( '.multi-action-form' ).find( ".multi-action-buttons" );
 
 				$selectAllCBox.on( 'click' , function(){
-					var $allCBoxes = $listingTable.find( 'tr > td:first-child input:checkbox' );
+					var $allCBoxes = $listingTable.find( 'tr > td:first-child input:checkbox' )
+					  , isChecked  = $selectAllCBox.is( ':checked' );
 
 					$allCBoxes.each( function(){
-						this.checked = $selectAllCBox.is( ':checked' );
+						this.checked = isChecked;
 						if ( this.checked ) {
 							$( this ).closest( 'tr' ).addClass( 'selected' );
 						} else {
 							$( this ).closest( 'tr' ).removeClass( 'selected' );
 						}
 					});
+
+					if ( isChecked ) {
+						activateSelectAllOption();
+					} else {
+						deactivateSelectAllOption();
+					}
 				});
 
 				$multiActionBtns.data( 'hidden', true );
@@ -282,8 +323,10 @@
 
 					if ( anyBoxesTicked == $listingTable.find( "td input:checkbox" ).length ) {
 						$selectAllCBox.prop( 'checked', true );
+						activateSelectAllOption();
 					} else {
 						$selectAllCBox.prop( 'checked', false );
+						deactivateSelectAllOption();
 					}
 
 					enabledContextHotkeys( !anyBoxesTicked );
@@ -310,6 +353,56 @@
 				$form.find( ".multi-action-buttons button" ).click( function( e ){
 					$hiddenActionField.val( $( this ).attr( 'name' ) );
 				} );
+
+				$form.on( "submit", function(){
+					var allRecords = $form.find( "[name=batchAll]:checked" ).length > 0;
+					if ( allRecords ) {
+						var $batchSrcArgs = $( '<input type="hidden" name="batchSrcArgs">' );
+
+						$batchSrcArgs.val( lastAjaxResult.sBatchSource );
+						$form.append( $batchSrcArgs );
+
+						$form.find( "input[name=id]" ).remove();
+					}
+				} );
+			};
+
+			updateSelectAllOptionRecordCount = function( newCount ){
+				var $form = $listingTable.closest( '.multi-action-form' );
+
+				if ( $form.length ) {
+					$form.find( ".batch-update-select-all .matching-record-count" ).each( function(){
+						$( this ).html( newCount );
+					} );
+				}
+			};
+			activateSelectAllOption = function(){
+				var $form = $listingTable.closest( '.multi-action-form' )
+				  , $selectAllContainer;
+
+				if ( $form.length ) {
+					$selectAllContainer = $form.find( ".batch-update-select-all" );
+					if ( $selectAllContainer.length ) {
+						if ( datatable.fnPagingInfo().iTotalPages > 1 && lastAjaxResult.sBatchSource ) {
+							$selectAllContainer.show();
+						} else {
+							deactivateSelectAllOption();
+						}
+					}
+				}
+			};
+			deactivateSelectAllOption = function(){
+				var $form = $listingTable.closest( '.multi-action-form' );
+				var $selectAllContainer;
+
+				if ( $form.length ) {
+					$selectAllContainer = $form.find( ".batch-update-select-all" );
+
+					if ( $selectAllContainer.length ) {
+						$selectAllContainer.find( "input[name='batchAll']" ).prop( "checked", false );
+						$selectAllContainer.hide();
+					}
+				}
 			};
 
 			enabledContextHotkeys = function( enabled ){
@@ -391,12 +484,18 @@
 				} catch( e ) {}
 
 				if ( typeof filterState !== "undefined" ) {
-					if ( allowUseFilter && typeof filterState.filter !== "undefined" && filterState.filter.length ) {
-						prePopulateFilter( filterState.filter );
+					if ( allowUseFilter && typeof filterState.filter !== "undefined" ) {
+						if ( filterState.filter.length ) {
+							prePopulateFilter( filterState.filter );
+						} else {
+							filtersPopulated = true;
+						}
 					}
 					if ( filterState.favourites && filterState.favourites.length ) {
 						setFavourites( filterState.favourites );
 					}
+				} else {
+					filtersPopulated = true;
 				}
 			};
 
@@ -614,13 +713,16 @@
 			};
 
 			prePopulateFilter = function( filter ) {
-				var loaded = false;
-
 				if ( filter && filter.length ) {
+					hasPreFilters = true;
 					$( document ).on( "conditionBuilderInitialized", function(){
+						filtersPopulated = true;
 						$filterDiv.find( "[name=filter]" ).data( "conditionBuilder" ).load( filter );
 					} );
 					toggleAdvancedFilter();
+				} else {
+					filtersPopulated = true;
+					hasPreFilters = false;
 				}
 			}
 

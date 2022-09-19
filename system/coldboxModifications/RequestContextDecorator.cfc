@@ -207,6 +207,10 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		return includeQs ? currentUrl & "?" & qs : currentUrl;
 	}
 
+	public string function getAdminHomepageUrl( string siteId="" ) {
+		return getModel( "ApplicationsService" ).getAdminHomepageUrl( argumentCollection = arguments );
+	}
+
 	public void function setCurrentPresideUrlPath( required string presideUrlPath ) {
 		getRequestContext().setValue( name="_presideUrlPath", private=true, value=arguments.presideUrlPath );
 	}
@@ -331,6 +335,22 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		return currentUrl.left( adminPath.len() ) == adminPath;
 	}
 
+	public string function getApiPath() {
+		var path = getController().getSetting( "rest.path" );
+
+		path = ReReplace( path, "^([^/])", "/\1" );
+		path = ReReplace( path, "([^/])$", "\1/" );
+
+		return path;
+	}
+
+	public boolean function isApiRequest() {
+		var currentUrl = getCurrentUrl();
+		var apiPath    = getApiPath();
+
+		return Left( currentUrl, Len( apiPath ) ) == apiPath;
+	}
+
 	public void function setIsDataManagerRequest() {
 		getRequestContext().setValue(
 			  name    = "_isDataManagerRequest"
@@ -393,7 +413,11 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		event.setHTTPHeader( name="X-Robots-Tag"    , value="noindex" );
 		event.setHTTPHeader( name="WWW-Authenticate", value='Website realm="website"' );
 
-		content reset=true type="text/html";header statusCode="401";WriteOutput( getModel( "presideRenderer" ).renderLayout() );abort;
+		content reset=true type="text/html";
+		header statusCode="401";
+		WriteOutput( getModel( "presideRenderer" ).renderLayout() );
+		getController().runEvent( event="general.requestEnd", prePostExempt=true )
+		abort;
 	}
 
 	public void function audit( userId=getAdminUserId() ) {
@@ -1011,10 +1035,15 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 			return arguments.cache;
 		}
 
+		if ( getModel( "websiteLoginService" ).isLoggedIn() && !getModel( "featureService" ).isFeatureEnabled( "fullPageCachingForLoggedInUsers" ) ) {
+			return false;
+		}
+
 		return getModel( "featureService" ).isFeatureEnabled( "fullPageCaching" )
 		    && !event.valueExists( "fwreinit" )
 		    && !this.isBackgroundThread()
 		    && !this.isAdminRequest()
+		    && !this.isApiRequest()
 		    && !this.isAdminUser()
 		    && event.getHTTPMethod() == "GET"
 		    && !this.getCurrentUrl().reFindNoCase( "^/asset/" )
@@ -1094,6 +1123,14 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		return prc._pageCacheTimeout ?: NullValue();
 	}
 
+	public void function setEmailRenderingContext( boolean value=true ) {
+		getRequestContext().setValue( name="_isEmailRenderingContext", value=arguments.value, private=true );
+	}
+
+	public boolean function isEmailRenderingContext() {
+		return getRequestContext().getValue( name="_isEmailRenderingContext", defaultValue=false, private=true );
+	}
+
 // status codes
 	public void function notFound() {
 		announceInterception( "onNotFound" );
@@ -1104,7 +1141,9 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 		contentOutput = getModel( "delayedViewletRendererService" ).renderDelayedViewlets(        contentOutput );
 		contentOutput = getModel( "delayedStickerRendererService" ).renderDelayedStickerIncludes( contentOutput );
+
 		writeOutput( contentOutput );
+		getController().runEvent( event="general.requestEnd", prePostExempt=true );
 		abort;
 	}
 
@@ -1116,7 +1155,9 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 		contentOutput = getModel( "delayedViewletRendererService" ).renderDelayedViewlets(        contentOutput );
 		contentOutput = getModel( "delayedStickerRendererService" ).renderDelayedStickerIncludes( contentOutput );
+
 		writeOutput( contentOutput );
+		getController().runEvent( event="general.requestEnd", prePostExempt=true );
 		abort;
 	}
 

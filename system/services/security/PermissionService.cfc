@@ -108,7 +108,7 @@ component displayName="Admin permissions service" {
 			return fromCache;
 		}
 
-		var hasPermission = true;
+		var hasPermission = NullValue();
 
 		if ( !Len( Trim( arguments.userId ) ) ) {
 			hasPermission = false;
@@ -119,7 +119,9 @@ component displayName="Admin permissions service" {
 			if ( !IsNull( local.contextPerm ) && IsBoolean( contextPerm ) ) {
 				hasPermission = contextPerm;
 			}
-		} else {
+		}
+
+		if ( IsNull( local.hasPermission ) ) {
 			hasPermission = ArrayFind( listPermissionKeys( user=arguments.userId ), LCase( arguments.permissionKey ) ) > 0;
 		}
 
@@ -221,6 +223,59 @@ component displayName="Admin permissions service" {
 		}
 
 		return groups;
+	}
+
+	public array function listUserGroupsRoles( required string userId ) {
+		var cacheKey = "userGroupsRoles-#arguments.userId#";
+		var fromCache = _getCacheProvider().get( cacheKey );
+		if ( !isNull( local.fromCache ) ) {
+			return fromCache;
+		}
+
+		var groupsRoles = [];
+		var userGroups  = listUserGroups( argumentCollection=arguments );
+
+		if ( arrayLen( userGroups ) ) {
+			var rolesQuery = _getGroupDao().selectData(
+				  filter       = { id=userGroups }
+				, selectFields = [ "roles" ]
+			);
+
+			for ( var q in rolesQuery ) {
+				for ( var role in listToArray( q.roles ) ) {
+					groupsRoles.append( role );
+				}
+			}
+		}
+
+		_getCacheProvider().set( cacheKey, groupsRoles );
+
+		return groupsRoles;
+	}
+
+	public boolean function userHasAssignedRoles(
+		  required string userId
+		, required array  roles
+	) {
+		var cacheKey = "userRoles-#arguments.userId#-#hash( serialize( arguments.roles ) )#";
+		var fromCache = _getCacheProvider().get( cacheKey );
+		if ( !isNull( local.fromCache ) ) {
+			return fromCache;
+		}
+
+		var hasPermission = false;
+		var userRoles     = listUserGroupsRoles( userId=arguments.userId );
+
+		for ( var role in arguments.roles ) {
+			if ( arrayContains( userRoles, role ) ) {
+				hasPermission = true;
+				break;
+			}
+		}
+
+		_getCacheProvider().set( cacheKey, hasPermission );
+
+		return hasPermission;
 	}
 
 	public struct function getContextPermissions(

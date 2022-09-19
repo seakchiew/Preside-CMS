@@ -9,6 +9,8 @@ component {
 
 	variables._operationsCache = {};
 
+	property name="dataManagerDefaults" inject="coldbox:setting:dataManager.defaults";
+
 // CONSTRUCTOR
 
 	/**
@@ -22,6 +24,7 @@ component {
 	 * @customizationService.inject datamanagerCustomizationService
 	 * @cloningService.inject       presideObjectCloningService
 	 * @multilingualService.inject  multilingualPresideObjectService
+	 * @enumService.inject          enumService
 	 */
 	public any function init(
 		  required any presideObjectService
@@ -34,6 +37,7 @@ component {
 		, required any customizationService
 		, required any cloningService
 		, required any multilingualService
+		, required any enumService
 	) {
 		_setPresideObjectService( arguments.presideObjectService );
 		_setContentRenderer( arguments.contentRenderer );
@@ -45,6 +49,7 @@ component {
 		_setCustomizationService( arguments.customizationService );
 		_setCloningService( arguments.cloningService );
 		_setMultilingualService( arguments.multilingualService );
+		_setEnumService( arguments.enumService );
 
 		return this;
 	}
@@ -154,7 +159,7 @@ component {
 			, attributeName = "datamanagerHiddenGridFields"
 		);
 
-		return ListToArray( fields );
+		return ListToArray( fields, ", " );
 	}
 
 	public array function listSearchFields( required string objectName ) {
@@ -163,7 +168,7 @@ component {
 			, attributeName = "datamanagerSearchFields"
 		);
 
-		return ListToArray( fields );
+		return ListToArray( fields, ", " );
 	}
 
 	public array function listBatchEditableFields( required string objectName ) {
@@ -239,6 +244,19 @@ component {
 		}
 
 		return _operationsCache[ arguments.objectName ];
+	}
+
+	public boolean function canBatchSelectAll( required string objectName ) {
+		if ( !$isFeatureEnabled( "batchOperationSelectAll" ) ) {
+			return false;
+		}
+
+		var canSelectAll = _getPresideObjectService().getObjectAttribute(
+			  objectName    = arguments.objectName
+			, attributeName = "datamanagerAllowBatchSelectAll"
+		);
+
+		return !IsBoolean( canSelectAll ) || canSelectAll;
 	}
 
 	public string function getDefaultOperationsForObject( required string objectName ) {
@@ -443,10 +461,19 @@ component {
 			}
 		}
 
-		result.records = _getPresideObjectService().selectData( argumentCollection=args );
+		var dbAdapter = _getPresideObjectService().getDbAdapterForObject( arguments.objectName );
+
+		if ( dbAdapter.supportsCountOverWindowFunction() ) {
+			args.selectFields.append( "#dbAdapter.getCountOverWindowFunctionSql()# as _total_recordcount" );
+		}
+
+		result.records        = _getPresideObjectService().selectData( argumentCollection=args );
+		result.selectDataArgs = StructCopy( args );
 
 		if ( arguments.startRow == 1 && result.records.recordCount < arguments.maxRows ) {
 			result.totalRecords = result.records.recordCount;
+		} else if ( dbAdapter.supportsCountOverWindowFunction() ) {
+			result.totalRecords = result.records.recordCount ? result.records._total_recordcount : 0;
 		} else {
 			result.totalRecords = _getPresideObjectService().selectData( argumentCollection=args, recordCountOnly=true, maxRows=0 );
 		}
@@ -501,79 +528,6 @@ component {
 		return result;
 	}
 
-	public boolean function batchEditField(
-		  required string objectName
-		, required string fieldName
-		, required array  sourceIds
-		, required string value
-		,          string multiEditBehaviour = "append"
-		,          string auditAction        = "datamanager_batch_edit_record"
-		,          string auditCategory      = "datamanager"
-	) {
-		var pobjService  = _getPresideObjectService();
-		var isMultiValue = pobjService.isManyToManyProperty( arguments.objectName, arguments.fieldName );
-
-		transaction {
-			for( var sourceId in sourceIds ) {
-				if ( !isMultiValue ) {
-					pobjService.updateData(
-						  objectName = objectName
-						, data       = { "#arguments.fieldName#" = value }
-						, filter     = { id=sourceId }
-					);
-				} else {
-					var existingIds  = [];
-					var targetIdList = [];
-					var newChoices   = ListToArray( arguments.value );
-
-					if ( arguments.multiEditBehaviour != "overwrite" ) {
-						var previousData = pobjService.getDeNormalizedManyToManyData(
-							  objectName   = objectName
-							, id           = sourceId
-							, selectFields = [ arguments.fieldName ]
-						);
-						existingIds = ListToArray( previousData[ arguments.fieldName ] ?: "" );
-					}
-
-					switch( arguments.multiEditBehaviour ) {
-						case "overwrite":
-							targetIdList = newChoices;
-							break;
-						case "delete":
-							targetIdList = existingIds;
-							for( var id in newChoices ) {
-								targetIdList.delete( id )
-							}
-							break;
-						default:
-							targetIdList = existingIds;
-							targetIdList.append( newChoices, true );
-					}
-
-					targetIdList = targetIdList.toList();
-					targetIdList = ListRemoveDuplicates( targetIdList );
-
-					pobjService.updateData(
-						  objectName              = objectName
-						, id                      = sourceId
-						, data                    = { "#updateField#" = targetIdList }
-						, updateManyToManyRecords = true
-					);
-				}
-
-				$audit(
-					  action   = arguments.auditAction
-					, type     = arguments.auditCategory
-					, recordId = sourceid
-					, detail   = Duplicate( arguments )
-				);
-			}
-		}
-
-		return true;
-	}
-
-
 	public array function getRecordsForAjaxSelect(
 		  required string  objectName
 		,          array   ids           = []
@@ -586,6 +540,7 @@ component {
 		,          string  labelRenderer = ""
 		,          array   bypassTenants = []
 		,          boolean useCache      = false
+		,          string  idField       = ""
 	) {
 		var result = [];
 		var records = "";
@@ -612,7 +567,7 @@ component {
 		if (args.orderBy is 'label') {
 			args.orderBy = labelField;
 		}
-		var idField            = _getPresideOBjectService().getIdField( arguments.objectName );
+		var idField            = Len( Trim( arguments.idField ) ) ? arguments.idField : _getPresideOBjectService().getIdField( arguments.objectName );
 		var replacedLabelField = !Find( ".", labelField ) ? "#arguments.objectName#.${labelfield} as label" : "${labelfield} as label";
 		if ( len( arguments.labelRenderer ) ) {
 			args.selectFields = _getLabelRendererService().getSelectFieldsForLabel( arguments.labelRenderer );
@@ -661,19 +616,22 @@ component {
 
 	public string function getPrefetchCachebusterForAjaxSelect( required string objectName, string labelRenderer="" ) {
 		var obj               = _getPresideObjectService().getObject( arguments.objectName );
-		var dmField           = obj.getDateModifiedField();
 		var lastModified      = Now();
 		var rendererCacheDate = _getLabelRendererService().getRendererCacheDate( labelRenderer );
 		var recordCount       = 0;
 
-		if ( StructKeyExists( _getPresideObjectService().getObjectProperties( arguments.objectName ), dmField ) ) {
-			var records = obj.selectData(
-				selectFields = [ "Max( #dmField# ) as lastmodified", "count(1) as _total_rowcount" ]
-			);
+		if ( not isSimpleValue( obj ) ) {
+			var dmField = obj.getDateModifiedField();
 
-			if ( IsDate( records.lastmodified ) ) {
-				lastModified = records.lastmodified;
-				recordCount  = records._total_rowcount;
+			if ( StructKeyExists( _getPresideObjectService().getObjectProperties( arguments.objectName ), dmField ) ) {
+				var records = obj.selectData(
+					selectFields = [ "Max( #dmField# ) as lastmodified", "count(1) as _total_rowcount" ]
+				);
+
+				if ( IsDate( records.lastmodified ) ) {
+					lastModified = records.lastmodified;
+					recordCount  = records._total_rowcount;
+				}
 			}
 		}
 
@@ -768,6 +726,7 @@ component {
 		var poService            = _getPresideObjectService();
 		var relationshipGuidance = _getRelationshipGuidance();
 		var searchTerms          = arguments.expandTerms ? listToArray( arguments.q, " " ) : [ arguments.q ];
+		var enumParamTerms       = [];
 
 		if ( arguments.searchFields.len() ) {
 			var parsedFields = poService.parseSelectFields(
@@ -783,6 +742,25 @@ component {
 				for( field in parsedFields ){
 					if ( StructKeyExists( poService.getObjectProperties( arguments.objectName ), field ) ) {
 						field = _getFullFieldName( field,  arguments.objectName );
+
+						var fieldEnumName = poService.getObjectPropertyAttribute(
+							  objectName    = arguments.objectName
+							, propertyName  = field
+							, attributeName = "enum"
+						);
+
+						if ( !isEmpty( fieldEnumName ) ) {
+							var enumFuzzyMatches = _getEnumService().fuzzySearchKeyByLabel(
+								 enum       = fieldEnumName
+								,searchTerm = searchTerms[ t ]
+							);
+
+							for ( var e=1; e<=enumFuzzyMatches.len(); e++ ) {
+								filter &= delim & field & " = :enum#paramName##e>1 ? "#e#" : ""#";
+								arrayAppend( enumParamTerms, enumFuzzyMatches[e] );
+								delim = " or ";
+							}
+						}
 					}
 					filter &= delim & field & " like :#paramName#";
 					delim = " or ";
@@ -815,6 +793,25 @@ component {
 						}
 
 						if ( _propertyIsSearchable( field, objName ) ) {
+							var fieldEnumName = poService.getObjectPropertyAttribute(
+								  objectName    = objName
+								, propertyName  = field
+								, attributeName = "enum"
+							);
+
+							if ( !isEmpty( fieldEnumName ) ) {
+								var enumFuzzyMatches = _getEnumService().fuzzySearchKeyByLabel(
+									 enum       = fieldEnumName
+									,searchTerm = searchTerms[ t ]
+								);
+
+								for ( var e=1; e<=enumFuzzyMatches.len(); e++ ) {
+									filter &= delim & fullFieldName & " = :enum#paramName##e>1 ? "#e#" : ""#";
+									arrayAppend( enumParamTerms, enumFuzzyMatches[e] );
+									delim = " or ";
+								}
+							}
+
 							filter &= delim & fullFieldName & " like :#paramName#";
 							delim = " or ";
 						}
@@ -834,6 +831,11 @@ component {
 		for( var t=1; t<=searchTerms.len(); t++ ) {
 			paramName = t==1 ? "q" : "q#t#";
 			filterParams[ paramName ] = { type="varchar", value="%" & searchTerms[ t ] & "%" };
+
+			for ( var et=1; et<=enumParamTerms.len(); et++ ) {
+				var enumParamName             = "enum#paramName##et>1 ? "#et#" : ""#";
+				filterParams[ enumParamName ] = { type="varchar", value=enumParamTerms[ et ] };
+			}
 		}
 
 		return { filter=filter, filterParams=filterParams };
@@ -854,6 +856,56 @@ component {
 		return _getPresideObjectService().getObjectAttribute( objectName=arguments.objectName, attributeName="dataManagerExportPermissionKey", defaultValue="read" );
 	}
 
+	public string function getSaveExportPermissionKey( required string objectName ) {
+		return _getPresideObjectService().getObjectAttribute( objectName=arguments.objectName, attributeName="dataManagerSaveExportPermissionKey", defaultValue="read" );
+	}
+
+	public boolean function useTypedConfirmationForDeletion( required string objectName ) {
+		var result = _getPresideObjectService().getObjectAttribute(
+			  objectName    = arguments.objectName
+			, attributeName = "datamanagerTypeToConfirmDelete"
+			, defaultValue  = IsBoolean( dataManagerDefaults.typeToConfirmDelete ?: "" ) && dataManagerDefaults.typeToConfirmDelete
+		);
+
+		return IsBoolean( result ) && result;
+	}
+
+	public boolean function useTypedConfirmationForBatchDeletion( required string objectName ) {
+		var result = _getPresideObjectService().getObjectAttribute(
+			  objectName    = arguments.objectName
+			, attributeName = "datamanagerTypeToConfirmBatchDelete"
+			, defaultValue  = IsBoolean( dataManagerDefaults.typeToConfirmBatchDelete ?: "" ) && dataManagerDefaults.typeToConfirmBatchDelete
+		);
+
+		return IsBoolean( result ) && result;
+	}
+
+	public string function getDeletionConfirmationMatch( required string objectName, required struct record ) {
+		if ( _getCustomizationService().objectHasCustomization( arguments.objectName, "getRecordDeletionPromptMatch" ) ) {
+			var result = _getCustomizationService().runCustomization(
+				  objectName = arguments.objectName
+				, action     = "getRecordDeletionPromptMatch"
+				, args       = { record=arguments.record }
+			);
+
+			if ( Len( local.result ?: "" ) ) {
+				return result;
+			}
+		}
+
+		var defaultMatch = $translateResource( uri="cms:datamanager.delete.record.match", defaultValue="delete" );
+		var objectUri    = _getPresideObjectService().getResourceBundleUriRoot( arguments.objectname ) & "delete.record.match";
+
+		return $translateResource( uri=objectUri, defaultValue=defaultMatch );
+	}
+
+	public string function getBatchDeletionConfirmationMatch( required string objectName ) {
+		var objectUri  = _getPresideObjectService().getResourceBundleUriRoot( arguments.objectname ) & "batch.delete.records.match";
+		var defaultUri = "cms:datamanager.batch.delete.records.match";
+
+		return $translateResource( uri=objectUri, defaultValue=$translateResource( defaultUri ) );
+	}
+
 // PRIVATE HELPERS
 	private array function _prepareGridFieldsForSqlSelect( required array gridFields, required string objectName, boolean versionTable=false, boolean draftsEnabled=areDraftsEnabledForObject( arguments.objectName ) ) {
 		var sqlFields                = Duplicate( arguments.gridFields );
@@ -869,9 +921,13 @@ component {
 		var dateModifiedField        = obj.getDateModifiedField();
 		var labelFieldIsRelationship = ( props[ labelField ].relationship ?: "" ) contains "-to-";
 		var replacedLabelField       = !Find( ".", labelField ) ? "#objName#.${labelfield} as #ListLast( labelField, '.' )#" : "${labelfield} as #labelField#";
+		var objectHasIdField         = booleanFormat( len( trim( _getPresideObjectService().getIdField( objectName=arguments.objectName ) ) ) );
 
-		sqlFields.delete( "id" );
-		sqlFields.append( "#objName#.#idField# as id" );
+		if ( objectHasIdField ) {
+			sqlFields.delete( "id" );
+			sqlFields.append( "#objName#.#idField# as id" );
+		}
+
 		if ( !labelFieldIsRelationship && ListLen( labelField, "." ) < 2 && sqlFields.find( labelField ) ) {
 			sqlFields.delete( labelField );
 			sqlFields.append( replacedLabelField );
@@ -1090,4 +1146,10 @@ component {
 		_multilingualService = arguments.multilingualService;
 	}
 
+	private any function _getEnumService() {
+		return _enumService;
+	}
+	private void function _setEnumService( required any enumService ) {
+		_enumService = arguments.enumService;
+	}
 }

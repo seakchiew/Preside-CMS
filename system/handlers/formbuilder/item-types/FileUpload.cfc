@@ -10,6 +10,7 @@ component {
 			var downloadLink = event.buildLink(
 				  fileStorageProvider = 'formBuilderStorageProvider'
 				, fileStoragePath     = fileName
+				, fileStoragePrivate  = formBuilderStorageProvider.objectExists( path=args.response ?: "", private=true )
 			);
 
 			return '<a target="_blank" href="#downloadLink#"><i class="fa fa-fw fa-download blue"></i> #Trim( fileName )#</a>';
@@ -26,6 +27,7 @@ component {
 			return [ event.buildLink(
 				  fileStorageProvider = 'formBuilderStorageProvider'
 				, fileStoragePath     = args.response
+				, fileStoragePrivate  = formBuilderStorageProvider.objectExists( path=args.response ?: "", private=true )
 			) ];
 		}
 
@@ -97,11 +99,13 @@ component {
 				formBuilderStorageProvider.putObjectFromLocalPath(
 					  localPath = response.path
 					, path      = savedPath
+					, private   = true
 				);
 			} else {
 				formBuilderStorageProvider.putObject(
-					  object = FileReadBinary( response.path )
-					, path   = savedPath
+					  object  = FileReadBinary( response.path )
+					, path    = savedPath
+					, private = true
 				);
 			}
 

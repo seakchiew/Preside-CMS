@@ -5,8 +5,8 @@ component output="false" extends="tests.resources.HelperObjects.PresideTestCase"
 		var ruleset = "";
 		var filePath = ListAppend( GetTempDirectory(), CreateUUId() );
 		var expected = [
-			  { fieldName="another_field"    , validator="email"    , params={ validDomains = ["gmail.com"] }, message=""                          , serverCondition="${yet_another_field} eq 'test'", clientCondition="${yet_another_field}.val() === 'test'" }
-			, { fieldName="yet_another_field", validator="maxLength", params={ maxLength = 87 }              , message="{bundle:some.resource.key}", serverCondition="", clientCondition="" }
+			  { fieldName="another_field"    , fieldLabel="", validator="email"    , params={ validDomains = ["gmail.com"] }, message=""                          , serverCondition="${yet_another_field} eq 'test'", clientCondition="${yet_another_field}.val() === 'test'" }
+			, { fieldName="yet_another_field", fieldLabel="", validator="maxLength", params={ maxLength = 87 }              , message="{bundle:some.resource.key}", serverCondition="", clientCondition="" }
 		];
 
 		FileWrite( filePath, SerializeJson( expected ) );
@@ -163,6 +163,7 @@ component output="false" extends="tests.resources.HelperObjects.PresideTestCase"
 			expected &= 'return { ';
 				expected &= 'rules : { ';
 					expected &= '"field1" : { ';
+						expected &= '"normalizer" : function(value) { return $.trim(value); }, ';
 						expected &= '"required" : { param : [] }, ';
 						expected &= '"validator3" : { param : [], depends : function( el ){ return $( this.form ).find( "[name=''field1'']" ).val() === ''whatever''; } } ';
 					expected &= '}, ';

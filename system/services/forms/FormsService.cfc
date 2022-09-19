@@ -604,6 +604,10 @@ component displayName="Forms service" {
 		,          string  fieldNameSuffix         = ""
 		,          array   suppressFields          = []
 	) {
+		arguments.objectName = _getPresideObjectNameFromFormNameByConvention( arguments.formName );
+		arguments.data = arguments.formData;
+		$announceInterception( "preValidateForm", arguments );
+
 		var ruleset = _getValidationRulesetFromFormName( argumentCollection=arguments );
 		var result  = arguments.preProcessData ? preProcessForm( argumentCollection = arguments ) : "";
 		var data    = Duplicate( arguments.formData );
@@ -766,8 +770,9 @@ component displayName="Forms service" {
 	 *
 	 */
 	public string function createForm( any generator, string basedOn="", string formName ) {
-		var basedOnDef     = Len( Trim( arguments.basedOn ) ) ? Duplicate( getForm( arguments.basedOn ) ) : { tabs=[] };
-		var formDefinition = new FormDefinition( basedOnDef );
+		var basedOnDef       = Len( Trim( arguments.basedOn ) ) ? Duplicate( getForm( arguments.basedOn ) ) : { tabs=[] };
+		var formDefinition   = new FormDefinition( basedOnDef );
+		var persistToDbCache = !( application._preside_reloading ?: false );
 
 		if ( StructKeyExists( arguments, "generator" ) ) {
 			arguments.generator( formDefinition );
@@ -779,7 +784,7 @@ component displayName="Forms service" {
 			arguments.formName = _generateFormNameFromDefinition( rawDefinition );
 		}
 
-		_registerForm( arguments.formName, rawDefinition );
+		_registerForm( arguments.formName, rawDefinition, persistToDbCache );
 
 		return arguments.formName;
 	}
@@ -889,7 +894,7 @@ component displayName="Forms service" {
 			resolvedExtensions[ arguments.formName ] = true;
 
 			return _mergeForms(
-				  form1 = resolveExtensions( parentFormName, arguments.allForms[ parentFormName ], arguments.allForms )
+				  form1 = Duplicate( resolveExtensions( parentFormName, arguments.allForms[ parentFormName ], arguments.allForms ) )
 				, form2 = arguments.frmDefinition
 			);
 		};

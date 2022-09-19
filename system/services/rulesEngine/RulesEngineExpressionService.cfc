@@ -2,9 +2,9 @@
  * Service that provides logic for dealing with rule engine expressions.
  * See [[rules-engine]] for further details.
  *
- * @singleton
- * @presideservice
- * @autodoc
+ * @singleton      true
+ * @presideservice true
+ * @autodoc        true
  */
 component displayName="RulesEngine Expression Service" {
 
@@ -47,9 +47,14 @@ component displayName="RulesEngine Expression Service" {
 	 * @filterObject.hint Filter expressions by those that can be used as a filter for this object (ID)
 	 * @excludeTags.hint  Expressions with any of these tags (comma-separated list) will be ignored
 	 */
-	public array function listExpressions( string context="", string filterObject="", string excludeTags="" ) {
+	public array function listExpressions(
+		  string context      = ""
+		, string filterObject = ""
+		, string excludeTags  = ""
+		, array  userRoles    = _getAdminUserRoles()
+	) {
 		var cache    = _getRulesEngineExpressionCache();
-		var cachekey = arguments.filterObject & "_" & _getI18n().getFWLanguageCode() & "_" & _getI18n().getFWCountryCode() & "_" & arguments.context & "_" & arguments.excludeTags;
+		var cachekey = arguments.filterObject & "_" & _getI18n().getFWLanguageCode() & "_" & _getI18n().getFWCountryCode() & "_" & arguments.context & "_" & arguments.excludeTags & "_" & hash( serializeJSON( arguments.userRoles ) );
 
 		if ( StructKeyExists( cache, cacheKey ) ) {
 			return cache[ cacheKey ];
@@ -57,11 +62,16 @@ component displayName="RulesEngine Expression Service" {
 
 		_lazyLoadDynamicExpressions( argumentCollection=arguments );
 
-		var allExpressions  = _getExpressions();
-		var list            = [];
-		var hasExclusions   = len( arguments.excludeTags ) > 0;
-		var filterOnContext = len( arguments.context ) > 0;
-		var filterOnObject  = arguments.filterObject.len();
+		var allExpressions       = _getExpressions();
+		var list                 = [];
+		var hasExclusions        = len( arguments.excludeTags ) > 0;
+		var filterOnContext      = len( arguments.context ) > 0;
+		var filterOnObject       = arguments.filterObject.len();
+		var expressionsRoleLimit = {};
+
+		if ( filterOnObject && arrayLen( userRoles ) ) {
+			expressionsRoleLimit = getObjectFieldsExpressionRoleLimits( objectName=arguments.filterObject );
+		}
 
 		for( var expressionId in allExpressions ) {
 			var contexts = allExpressions[ expressionId ].contexts ?: [];
@@ -75,6 +85,29 @@ component displayName="RulesEngine Expression Service" {
 			}
 			if ( filterOnObject && !( ( allExpressions[ expressionId ].filterObjects ?: [] ).len() && allExpressions[ expressionId ].filterObjects.findNoCase( arguments.filterObject ) ) ) {
 				continue;
+			}
+
+			if ( len( arguments.filterObject ) ) {
+				var roleLimitKey = arguments.filterObject & "." & listLast( expressionId, "." );
+			} else {
+				var roleLimitKey = listLast( listFirst( expressionId, "." ), "_" ) & "." & listLast( expressionId, "." );
+			}
+
+			if ( filterOnObject && arrayLen( userRoles ) && structKeyExists( expressionsRoleLimit, roleLimitKey ) ) {
+				var expressionHandler    = allExpressions[ expressionId ].expressionHandler ?: "";
+				var expressionIdentifier = ( listLen( expressionHandler, "." ) eq 5 ) ? listGetAt( expressionHandler, 4, "." ) : "";
+				var hasPermission        = false;
+				var propertyRoleLimit    = expressionsRoleLimit[ roleLimitKey ];
+
+				for ( var role in arguments.userRoles ) {
+					if ( structKeyExists( propertyRoleLimit, role ) ) {
+						hasPermission = hasPermission || arrayContainsNoCase( propertyRoleLimit[ role ], expressionIdentifier );
+					}
+				}
+
+				if ( !hasPermission ) {
+					continue;
+				}
 			}
 
 			var getExpressionArgs  = { expressionId = expressionId };
@@ -497,6 +530,73 @@ component displayName="RulesEngine Expression Service" {
 		return arguments.category;
 	}
 
+	/**
+	 * Method that returns a file path of a file
+	 * containing json representation of all expressions for the given object
+	 *
+	 */
+	public string function getExpressionsFile( string context="", string filterObject="", string excludeTags="" ) {
+		var fileName = "";
+		var filePath = GetTempDirectory();
+		var locale   = $i18n.getFwLocale();
+		var suffix   = hash( arguments.excludeTags & serializeJSON( _getAdminUserRoles() ) );
+
+		if ( Len( arguments.context ) ) {
+			fileName = "conditionexpressions-#locale#-#arguments.context#-#suffix#.json"
+		} else {
+			fileName = "filterexpressions-#locale#-#arguments.filterObject#-#suffix#.json"
+		}
+		filePath &= fileName;
+
+		variables._generatedExpressionFiles = variables._generatedExpressionFiles ?: {};
+		if ( !StructKeyExists( variables._generatedExpressionFiles, fileName ) || !FileExists( filePath ) ) {
+			var expressions = listExpressions( argumentCollection=arguments );
+			FileWrite( filePath, SerializeJson( expressions ) );
+			variables._generatedExpressionFiles[ fileName ] = true;
+		}
+
+		return filePath;
+	}
+
+	public struct function getObjectFieldsExpressionRoleLimits(
+		  required string objectName
+		,          string structKeyPreffix = ""
+	) {
+		var cache    = _getRulesEngineExpressionCache();
+		var cachekey = "autoExpressionRoleLimits" & "_" & arguments.structKeyPreffix & "_" & arguments.objectName;
+
+		if ( StructKeyExists( cache, cacheKey ) ) {
+			return cache[ cacheKey ];
+		}
+
+		var roleLimit  = {};
+		var properties = $getPresideObjectService().getObjectProperties( arguments.objectName );
+
+		for ( var prop in properties ) {
+			var propertyDefinition = properties[ prop ];
+			var propertyName       = propertyDefinition.name;
+			var roleLimitKey       = "#arguments.structKeyPreffix##arguments.objectName#.#propertyName#";
+
+			if ( len( propertyDefinition.relatedTo ?: "" ) && $helpers.isTrue( propertyDefinition.autoGenerateFilterExpressions ?: "" ) ) {
+				roleLimit[ roleLimitKey ] = roleLimit[ roleLimitKey ] ?: {};
+				structAppend( roleLimit, getObjectFieldsExpressionRoleLimits(
+					  objectName       = propertyDefinition.relatedTo
+					, structKeyPreffix = arguments.objectName & propertyDefinition.relatedTo
+				) );
+			}
+
+			for ( var definition in structKeyArray( propertyDefinition ) ) {
+				if ( reFindNoCase( "^autoFilterExpressions:(.*)", definition ) ) {
+					roleLimit[ roleLimitKey ] = roleLimit[ roleLimitKey ] ?: {};
+					roleLimit[ roleLimitKey ][ replaceNoCase( definition, "autoFilterExpressions:", "" ) ] = listToArray( propertyDefinition[ definition ] );
+				}
+			}
+		}
+
+		cache[ cacheKey ] = roleLimit;
+		return roleLimit;
+	}
+
 // PRIVATE HELPERS
 	private boolean function _findListItemInArray( required array array, required string list ) {
 		for( var listItem in listToArray( arguments.list ) ) {
@@ -549,6 +649,14 @@ component displayName="RulesEngine Expression Service" {
 				variables._lazyLoadDone[ objectName ] = true;
 			}
 		}
+	}
+
+	private array function _getAdminUserRoles( string adminUserId=$getAdminLoginService().getLoggedInUserId() ) {
+		if ( !$getAdminLoginService().isSystemUser() ) {
+			return $getAdminPermissionService().listUserGroupsRoles( userId=arguments.adminUserId );
+		}
+
+		return [];
 	}
 
 // GETTERS AND SETTERS

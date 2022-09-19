@@ -1,6 +1,8 @@
 component validationProvider=true {
 
 	public boolean function required( required string fieldName, any value="", struct data={} ) validatorMessage="cms:validation.required.default" {
+		var value = IsSimpleValue( arguments.value ) ? Trim( arguments.value ) : arguments.value;
+
 		return StructKeyExists( arguments.data, fieldName ) && !IsEmpty( value );
 	}
 
@@ -34,6 +36,28 @@ component validationProvider=true {
 		return "function( value, el, param ) { return this.optional( el ) || value.replaceAll( ',', '' ) >= ( ( typeof( param ) == 'object' ) ? param.param : param ); }";
 	}
 
+	public boolean function lessThanField( required string value, required struct data, required string field ) validatorMessage="cms:validation.lessThanField.default" {
+		if ( !IsNumeric( arguments.value ) || !IsNumeric( arguments.data[ arguments.field ] ?: "" ) ) {
+			return true;
+		}
+
+		return Val( arguments.value ) < Val( arguments.data[ arguments.field ] );
+	}
+	public string function lessThanField_js() {
+		return "function( value, el, params ){ var $field = $( '[name=' + params[0] + ']' ); return !value.length || !$field.length || !$field.val().length || (parseFloat(value) < parseFloat($field.val())); }";
+	}
+
+	public boolean function lessThanOrEqualToField( required string value, required struct data, required string field ) validatorMessage="cms:validation.lessThanOrEqualToField.default" {
+		if ( !IsNumeric( arguments.value ) || !IsNumeric( arguments.data[ arguments.field ] ?: "" ) ) {
+			return true;
+		}
+
+		return Val( arguments.value ) <= Val( arguments.data[ arguments.field ] );
+	}
+	public string function lessThanOrEqualToField_js() {
+		return "function( value, el, params ){ var $field = $( '[name=' + params[0] + ']' ); return !value.length || !$field.length || !$field.val().length || (parseFloat(value) <= parseFloat($field.val())); }";
+	}
+
 	public boolean function max( required string fieldName, string value="", required numeric max ) validatorMessage="cms:validation.max.default" {
 		if ( not Len( Trim( arguments.value ) ) ) {
 			return true;
@@ -44,6 +68,28 @@ component validationProvider=true {
 
 	public string function max_js() {
 		return "function( value, el, param ) { return this.optional( el ) || value.replaceAll( ',', '' ) <= ( ( typeof( param ) == 'object' ) ? param.param : param ); }";
+	}
+
+	public boolean function greaterThanField( required string value, required struct data, required string field ) validatorMessage="cms:validation.greaterThanField.default" {
+		if ( !IsNumeric( arguments.value ) || !IsNumeric( arguments.data[ arguments.field ] ?: "" ) ) {
+			return true;
+		}
+
+		return Val( arguments.value ) > Val( arguments.data[ arguments.field ] );
+	}
+	public string function greaterThanField_js() {
+		return "function( value, el, params ){ var $field = $( '[name=' + params[0] + ']' ); return !value.length || !$field.length || !$field.val().length || (parseFloat(value) > parseFloat($field.val())); }";
+	}
+
+	public boolean function greaterThanOrEqualToField( required string value, required struct data, required string field ) validatorMessage="cms:validation.greaterThanOrEqualToField.default" {
+		if ( !IsNumeric( arguments.value ) || !IsNumeric( arguments.data[ arguments.field ] ?: "" ) ) {
+			return true;
+		}
+
+		return Val( arguments.value ) >= Val( arguments.data[ arguments.field ] );
+	}
+	public string function greaterThanOrEqualToField_js() {
+		return "function( value, el, params ){ var $field = $( '[name=' + params[0] + ']' ); return !value.length || !$field.length || !$field.val().length || (parseFloat(value) >= parseFloat($field.val())); }";
 	}
 
 	public boolean function range( required string fieldName, string value="", required numeric min, required numeric max ) validatorMessage="cms:validation.range.default" {
@@ -84,6 +130,22 @@ component validationProvider=true {
 		return IsDate( arguments.value );
 	}
 
+	public boolean function minimumTime( required string value, required string minimumTime ) validatorMessage="cms:validation.minimumTime.default" {
+		if ( !IsDate( arguments.value ) ) {
+			return true;
+		}
+
+		return ( DateCompare( dateTimeFormat( arguments.value, "HH:nn" ), arguments.minimumTime ) >= 0 );
+	}
+	
+	public boolean function maximumTime( required string value, required string maximumTime ) validatorMessage="cms:validation.maximumTime.default" {
+		if ( !IsDate( arguments.value ) ) {
+			return true;
+		}
+
+		return ( DateCompare( dateTimeFormat( arguments.value, "HH:nn" ), arguments.maximumTime ) <= 0 );
+	}
+	
 	public boolean function datetime( required string value ) validatorMessage="cms:validation.date.default" {
 		if ( not Len( Trim( arguments.value ) ) ) {
 			return true;
@@ -221,6 +283,13 @@ component validationProvider=true {
 		return validFiles == filesToCheck.len();
 	}
 
+	public boolean function fileNameSlug( required string fieldName, string value="" ) validatorMessage="cms:validation.fileNameSlug.default" {
+		return match( fieldName=arguments.fieldName, value=arguments.value, regex="^[a-zA-Z0-9\-]+$" );
+	}
+	public string function fileNameSlug_js() {
+		return "function( value ){ return !value.length || value.match( /^[a-zA-Z0-9\-]+$/ ) !== null }";
+	}
+
 	public boolean function minimumDate( required string value, required date minimumDate ) validatorMessage="cms:validation.minimumDate.default" {
 		if ( !IsDate( arguments.value ) ) {
 			return true;
@@ -285,5 +354,12 @@ component validationProvider=true {
 	}
 	public string function earlierThanOrSameAsField_js() {
 		return "function( value, el, params ){ var $field = $( '[name=' + params[0] + ']' ); return !value.length || !$field.length || !$field.val().length || value <= $field.val(); }";
+	}
+
+	public boolean function url( required string fieldName, any value="" ) validatorMessage="cms:validation.url.default" {
+		return IsEmpty( arguments.value ) || ReFindNoCase( "^https?:\/\/([-_A-Z0-9]+\.)+[-_A-Z0-9]+(\/.*)?$", arguments.value );
+	}
+	public string function url_js() validatorMessage="validationExtras:validation.simpleUrl.default" {
+		return "function( value, el, params ){ return !value.length || value.match( /^https?:\/\/([-_A-Z0-9]+\.)+[-_A-Z0-9]+(\/.*)?$/i ) !== null }";
 	}
 }

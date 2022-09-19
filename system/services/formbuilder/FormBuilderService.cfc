@@ -6,6 +6,7 @@
  * @autodoc
  */
 component {
+	property name="formBuilderStorageProvider"  inject="FormBuilderStorageProvider";
 
 // CONSTRUCTOR
 	/**
@@ -19,7 +20,9 @@ component {
 	 * @spreadsheetLib.inject               spreadsheetLib
 	 * @presideObjectService.inject         presideObjectService
 	 * @rulesEngineFilterService.inject     rulesEngineFilterService
+	 * @rulesEngineWebRequestService.inject rulesEngineWebRequestService
 	 * @csvWriter.inject                    csvWriter
+	 * @sessionStorage.inject               sessionStorage
 	 *
 	 */
 	public any function init(
@@ -33,7 +36,9 @@ component {
 		, required any spreadsheetLib
 		, required any presideObjectService
 		, required any rulesEngineFilterService
+		, required any rulesEngineWebRequestService
 		, required any csvWriter
+		, required any sessionStorage
 	) {
 		_setItemTypesService( arguments.itemTypesService );
 		_setActionsService( arguments.actionsService );
@@ -45,7 +50,9 @@ component {
 		_setSpreadsheetLib( arguments.spreadsheetLib );
 		_setPresideObjectService( arguments.presideObjectService );
 		_setRulesEngineFilterService( arguments.rulesEngineFilterService );
+		_setRulesEngineWebRequestService( arguments.rulesEngineWebRequestService );
 		_setCsvWriter( arguments.csvWriter );
+		_setSessionStorage( arguments.sessionStorage );
 
 		return this;
 	}
@@ -114,7 +121,7 @@ component {
 	 * @id.hint ID of the item you wish to get
 	 */
 	public struct function getFormItem( required string id ) {
-		var result = [];
+		var result = {};
 		var items  = $getPresideObject( "formbuilder_formitem" ).selectData(
 			  filter       = { id=arguments.id }
 			, selectFields = [
@@ -127,16 +134,21 @@ component {
 		);
 
 		for( var item in items ) {
-			return {
+			result = {
 				  id            = item.id
-				, type          = _getItemTypesService().getItemTypeConfig( item.item_type )
-				, configuration = DeSerializeJson( item.configuration )
 				, formId        = item.form
 				, questionId    = item.question
+				, item_type     = item.item_type
+				, type          = _getItemTypesService().getItemTypeConfig( item.item_type )
+				, configuration = DeSerializeJson( item.configuration )
 			};
+
+			if ( Len( item.question ) ) {
+				StructAppend( result.configuration, _getItemConfigurationForV2Question( item.question ) );
+			}
 		}
 
-		return {};
+		return result;
 	}
 
 	/**
@@ -192,13 +204,26 @@ component {
 		var formItemDao   = $getPresideObject( "formbuilder_formitem" );
 		var existingItems = formItemDao.selectData( selectFields=[ "Max( sort_order ) as max_sort_order" ], filter={ form=arguments.formId } );
 
-		return formItemDao.insertData( data={
+		var data = {
 			  form          = arguments.formId
 			, item_type     = arguments.itemType
 			, question      = arguments.question
 			, sort_order    = Val( existingItems.max_sort_order ?: "" ) + 1
 			, configuration = SerializeJson( arguments.configuration )
-		} );
+		};
+
+		var itemId = formItemDao.insertData( data=data );
+
+		StructAppend( data, _getFormItemAuditDetail( formItemId=itemId ) );
+
+		$audit(
+			  action   = "formbuilder_add_item"
+			, type     = "formbuilder"
+			, recordId = itemId
+			, detail   = data
+		);
+
+		return itemId;
 	}
 
 	/**
@@ -214,14 +239,27 @@ component {
 		, required struct configuration
 		,          string question = ""
 	) {
-		if ( !arguments.id.len() || isFormLocked( itemId=arguments.id ) ) {
+		if ( !Len( Trim( arguments.id ) ) || isFormLocked( itemId=arguments.id ) ) {
 			return 0;
 		}
 
-		return $getPresideObject( "formbuilder_formitem" ).updateData( id=arguments.id, data={
+		var data = {
 			  configuration = SerializeJson( arguments.configuration )
 			, question      = arguments.question
-		} );
+		};
+
+		var recordsCount = $getPresideObject( "formbuilder_formitem" ).updateData( id=arguments.id, data=data );
+
+		StructAppend( data, _getFormItemAuditDetail( formItemId=arguments.id ) );
+
+		$audit(
+			  action   = "formbuilder_edit_item"
+			, type     = "formbuilder"
+			, recordId = arguments.id
+			, detail   = data
+		);
+
+		return recordsCount;
 	}
 
 	/**
@@ -268,8 +306,23 @@ component {
 	 *
 	 */
 	public boolean function deleteItem( required string id ) {
+		var data = _getFormItemAuditDetail( formItemId=arguments.id );
+
 		if ( Len( Trim( arguments.id ) ) && !isFormLocked( itemId=arguments.id ) ) {
-			return $getPresideObject( "formbuilder_formitem" ).deleteData( id=arguments.id ) > 0;
+			var recordsCount = $getPresideObject( "formbuilder_formitem" ).deleteData( id=arguments.id ) > 0;
+
+			if ( recordsCount > 0 ) {
+				$audit(
+					  action   = "formbuilder_delete_item"
+					, type     = "formbuilder"
+					, recordId = arguments.id
+					, detail   = data
+				);
+
+				return true;
+			} else {
+				return false;
+			}
 		}
 
 		return false;
@@ -345,10 +398,25 @@ component {
 			return 0;
 		}
 
-		return $getPresideObject( "formbuilder_form" ).updateData(
-			  id = arguments.id
-			, data = { active = true }
+		var data = { active=true };
+
+		var recordsCount = $getPresideObject( "formbuilder_form" ).updateData(
+			  id   = arguments.id
+			, data = data
 		);
+
+		if ( recordsCount > 0 ) {
+			StructAppend( data, _getFormAuditDetail( formId=arguments.id ) );
+
+			$audit(
+				  action   = "formbuilder_activate"
+				, type     = "formbuilder"
+				, recordId = arguments.id
+				, detail   = data
+			);
+		}
+
+		return recordsCount;
 	}
 
 	/**
@@ -363,10 +431,25 @@ component {
 			return 0;
 		}
 
-		return $getPresideObject( "formbuilder_form" ).updateData(
-			  id = arguments.id
-			, data = { active = false }
+		var data = { active=false };
+
+		var recordsCount = $getPresideObject( "formbuilder_form" ).updateData(
+			  id   = arguments.id
+			, data = data
 		);
+
+		if ( recordsCount > 0 ) {
+			StructAppend( data, _getFormAuditDetail( formId=arguments.id ) );
+
+			$audit(
+				  action   = "formbuilder_deactivate"
+				, type     = "formbuilder"
+				, recordId = arguments.id
+				, detail   = data
+			);
+		}
+
+		return recordsCount;
 	}
 
 	/**
@@ -381,10 +464,25 @@ component {
 			return 0;
 		}
 
-		return $getPresideObject( "formbuilder_form" ).updateData(
-			  id = arguments.id
-			, data = { locked = true }
+		var data = { locked=true };
+
+		var recordsCount = $getPresideObject( "formbuilder_form" ).updateData(
+			  id   = arguments.id
+			, data = data
 		);
+
+		if ( recordsCount > 0 ) {
+			StructAppend( data, _getFormAuditDetail( formId=arguments.id ) );
+
+			$audit(
+				  action   = "formbuilder_lock"
+				, type     = "formbuilder"
+				, recordId = arguments.id
+				, detail   = data
+			);
+		}
+
+		return recordsCount;
 	}
 
 	/**
@@ -399,10 +497,25 @@ component {
 			return 0;
 		}
 
-		return $getPresideObject( "formbuilder_form" ).updateData(
-			  id = arguments.id
-			, data = { locked = false }
+		var data = { locked=false };
+
+		var recordsCount = $getPresideObject( "formbuilder_form" ).updateData(
+			  id   = arguments.id
+			, data = data
 		);
+
+		if ( recordsCount > 0 ) {
+			StructAppend( data, _getFormAuditDetail( formId=arguments.id ) );
+
+			$audit(
+				  action   = "formbuilder_unlock"
+				, type     = "formbuilder"
+				, recordId = arguments.id
+				, detail   = data
+			);
+		}
+
+		return recordsCount;
 	}
 
 	/**
@@ -473,6 +586,105 @@ component {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Checks whether access is allowed to the form, based on the form requiring login
+	 * plus an optional access condition. Returns a string
+	 *
+	 * @autodoc
+	 * @formId.hint The ID of the form you wish to check
+	 *
+	 */
+	public struct function checkAccessAllowed( required string formId ) {
+		var formRecord    = getForm( id=arguments.formid );
+		var requiresLogin = IsBoolean( formRecord.require_login ?: "" ) && formRecord.require_login;
+		var hasCondition  = !IsEmpty( formRecord.access_condition ?: "" );
+
+		if ( $isFeatureEnabled( "websiteUsers" ) ) {
+			if ( requiresLogin && !$isWebsiteUserLoggedIn() ) {
+				return {
+					allowed = false
+					, reason  = "login"
+					, content = formRecord.login_required_content ?: ""
+					, message = $translateResource( "formbuilder:ajax.submit.login.required" )
+				};
+			}
+
+			if ( hasCondition && !_getRulesEngineWebRequestService().evaluateCondition( formRecord.access_condition ) ) {
+				return {
+					allowed = false
+					, reason  = "condition"
+					, content = formRecord.access_denied_content ?: ""
+					, message = $translateResource( "formbuilder:ajax.submit.access.denied" )
+				};
+			}
+		}
+
+		return { allowed=true, reason="", content="", message="" };
+	}
+
+	/**
+	 * Returns whether or not a form has fields that identify as being file upload fields,
+	 * to make it easier to handle beahviours and repopulating of forms.
+	 *
+	 * @autodoc
+	 * @formId.hint The ID of the form you wish to check
+	 *
+	 */
+	public boolean function formHasFileUploadFields( required string formId ) {
+		var fileUploadItemTypes = _getItemTypesService().getFileUploadItemTypes();
+
+		return $getPresideObject( "formbuilder_formitem" ).dataExists(
+			filter = { form=arguments.formId, item_type=fileUploadItemTypes }
+		);
+	}
+
+	/**
+	 * Stores a formbuilder form's submitted values in the user's session temporarily, so
+	 * they can be retrieved when the user has, for instance, logged back in after a timeout.
+	 * File upload fields will be omitted from these stored values.
+	 *
+	 * @autodoc
+	 * @formId.hint     The ID of the form you wish to store values for
+	 * @submission.hint The form value collection that will be stored in the session
+	 *
+	 */
+	public void function setTempStoredSubmission( required string formId, required struct submission ) {
+		var tempStorageKey      = "temp_formbuilder_submission_#formId#";
+		var dataToStore         = Duplicate( arguments.submission );
+		var fileUploadItemTypes = _getItemTypesService().getFileUploadItemTypes();
+		var fileFields          = $getPresideObject( "formbuilder_formitem" ).selectData(
+			  filter       = { form=arguments.formId, item_type=fileUploadItemTypes }
+			, selectFields = [ "question.field_id" ]
+		).valueArray( "field_id" );
+
+		for( var field in dataToStore ) {
+			if ( ArrayFind( fileFields, field ) ) {
+				StructDelete( dataToStore, field );
+			}
+		}
+
+		_getSessionStorage().setVar( tempStorageKey, dataToStore );
+	}
+
+	/**
+	 * Retrieves a formbuilder form's submitted values from the user's session temporarily
+	 * for repopulation to a form when the user has logged back in after a timeout.
+	 *
+	 * @autodoc
+	 * @formId.hint     The ID of the form you wish to retrieve stored values for
+	 *
+	 */
+	public struct function getTempStoredSubmission( required string formId ) {
+		var tempStorageKey = "temp_formbuilder_submission_#formId#";
+		var submission     =  _getSessionStorage().getVar( tempStorageKey, StructNew() );
+
+
+		_getSessionStorage().deleteVar( tempStorageKey );
+
+
+		return submission;
 	}
 
 	/**
@@ -857,6 +1069,11 @@ component {
 			var submission = getSubmission( submissionId );
 			for( var s in submission ) { submission = s; }
 
+			if( isV2Form( formId=arguments.formId ) ){
+				var v2responses = getV2Responses( formId=arguments.formId, submissionId=submissionId );
+				submission.submitted_data = serializeJSON( v2responses?:{} );
+			}
+
 			_getActionsService().triggerSubmissionActions(
 				  formId         = arguments.formId
 				, submissionData = submission
@@ -1024,6 +1241,108 @@ component {
 		return $getPresideObject( "formbuilder_formsubmission" ).deleteData(
 			filter = { id = arguments.submissionIds }
 		);
+	}
+
+	/**
+	 * Delete the given submission files.
+	 *
+	 * @autodoc
+	 * @submissionId.hint The ID of the submission
+	 *
+	 */
+	public void function deleteSubmissionFiles( required string submissionId ) {
+		var submission    = getSubmission( submissionId=arguments.submissionId );
+		var formId        = submission.form ?: "";
+		var fileItemTypes = _getItemTypesService().getFileUploadItemTypes();
+		var files         = [];
+
+		if ( isV2Form( formId=formId ) ) {
+			var fileFields = $getPresideObject( "formbuilder_question_response" ).selectData(
+				  selectFields = [ "response" ]
+				, filter       = "submission_type = 'formbuilder' and question.item_type in ( :question.item_type ) and submission = :submission"
+				, filterParams = {
+					  "question.item_type" = fileItemTypes
+					, submission           = submissionId
+				  }
+			);
+
+			for ( var fileField in fileFields ) {
+				ArrayAppend( files, fileField.response ?: "" );
+			}
+		} else {
+			if ( !$helpers.isEmptyString( submission.submitted_data ?: "" ) ) {
+				var submissionData = DeserializeJSON( submission.submitted_data );
+
+				var fileFields = $getPresideObject( "formbuilder_formitem" ).selectData(
+					  filter       = "form = :form and item_type in ( :item_type )"
+					, filterParams = {
+						  form     = formId
+						, item_type= fileItemTypes
+					  }
+					, selectFields = [ "configuration" ]
+				);
+
+				for ( var fileField in fileFields ) {
+					var fileFieldConfig = DeserializeJSON( fileFields.configuration ?: "" );
+
+					ArrayAppend( files, submissionData[ fileFieldConfig.name ?: "" ] ?: "" );
+				}
+			}
+		}
+
+		if ( ArrayLen( files ) ) {
+			for ( var file in files ) {
+				if ( !$helpers.isEmptyString( file ) ) {
+					var filePaths = ListToArray( file );
+
+					for ( var filePath in filePaths ) {
+						try {
+							formBuilderStorageProvider.deleteObject( path=filePath, private=formBuilderStorageProvider.objectExists( path=filePath, private=true ) );
+						} catch( any e ) {
+							$raiseError( e );
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Delete the given submission question responses.
+	 *
+	 * @autodoc
+	 * @submissionId.hint The ID of the submission
+	 *
+	 */
+	public void function deleteSubmissionResponses( required string submissionId ) {
+		var submission = getSubmission( submissionId=arguments.submissionId );
+		var formId     = submission.form ?: "";
+
+		deleteSubmissionFiles( submissionId=submissionId );
+
+		if ( isV2Form( formId=formId ) ) {
+			$getPresideObject( "formbuilder_question_response" ).deleteData(
+				filter = { submission_type="formbuilder", submission_reference=formId, submission=arguments.submissionId }
+			);
+		}
+	}
+
+	/**
+	 * Delete the given form question responses.
+	 *
+	 * @autodoc
+	 * @submissionId.hint The ID of the submission
+	 *
+	 */
+	public void function deleteFormResponses( required struct filter ) {
+		var submissions = $getPresideObject( "formbuilder_formsubmission" ).selectData(
+			  selectFields = [ "id" ]
+			, filter       = arguments.filter
+		);
+
+		for ( var submission in submissions ) {
+			deleteSubmissionResponses( submissionId=submission.id );
+		}
 	}
 
 	/**
@@ -1748,6 +2067,50 @@ component {
 		);
 	}
 
+	public boolean function updateUsesGlobalQuestions() {
+		try {
+			if ( $isFeatureEnabled( "formbuilder2" ) ) {
+				if ( !$getPresideSetting( category="formbuilder", setting="update_uses_global_questions", default=false ) ) {
+					$systemOutput( "Updating formbuilder2 forms use global questions..." );
+
+					var formBuilderForms = $getPresideObject( "formbuilder_form" ).selectData( selectFields=[ "id" ] );
+
+					for ( var formBuilderForm in formBuilderForms ) {
+						var formBuilderFormItem = $getPresideObject( "formbuilder_formitem" ).selectData(
+							  filter       = "form = :form"
+							, filterParams = { form=formBuilderForm.id }
+							, selectFields = [
+								"sum( case when ( question is null or question = '' ) then 0 else 1 end ) as questions"
+							  ]
+						);
+
+						var usesGlobalQuestions = false;
+						if ( IsNumeric( formBuilderFormItem.questions ?: "" ) ) {
+							usesGlobalQuestions = formBuilderFormItem.questions > 0
+						} else {
+							// Convert empty form i.e. without any form items to v2.
+							usesGlobalQuestions = true;
+						}
+
+						$getPresideObject( "formbuilder_form" ).updateData(
+							  id   = formBuilderForm.id
+							, data = { uses_global_questions=usesGlobalQuestions }
+						);
+					}
+
+					$getSystemConfigurationService().saveSetting( category="formbuilder", setting="update_uses_global_questions", value=true );
+
+					return true;
+				}
+			}
+		} catch ( any e ) {
+			$raiseError( e );
+			$systemOutput( "Failed to Update formbuilder2 forms use global questions." );
+		}
+
+		return false;
+	}
+
 // PRIVATE HELPERS
 	private void function _validateFieldNameIsUniqueForFormItem(
 		  required string formId
@@ -1802,7 +2165,7 @@ component {
 		var originalFormItems = getFormItems( id=arguments.basedOnFormId );
 		if( arrayLen( originalFormItems ) ) {
 			for( var formItem in originalFormItems ) {
-				addItem( formId=newFormId, itemType=formItem.type.id, configuration=formItem.configuration );
+				addItem( formId=newFormId, itemType=formItem.type.id, configuration=formItem.configuration, question=( formItem.questionId ?: "" ) );
 			}
 		}
 
@@ -1977,6 +2340,37 @@ component {
 		return responses;
 	}
 
+	private struct function _getFormItemAuditDetail( required string formItemId ) {
+		var formItem = $getPresideObject( "formbuilder_formitem" ).selectData(
+			  id           = arguments.formItemId
+			, selectFields = [
+				  "form"
+				, "question"
+				, "question.field_id"
+				, "question.field_label"
+				, "question.item_type"
+			  ]
+		);
+
+		return {
+			  formId            = formItem.form        ?: ""
+			, formItemType      = formItem.item_type   ?: ""
+			, formItemName      = formItem.field_id    ?: ""
+			, formQuestionId    = formItem.question    ?: ""
+			, formQuestionLabel = formItem.field_label ?: ""
+		};
+	}
+
+	private struct function _getFormAuditDetail( required string formId ) {
+		var formForm = getForm( id=arguments.formId );
+
+		return {
+			  formId     = formForm.id   ?: ""
+			, formName   = formForm.name ?: ""
+			, objectName = "formbuilder_form"
+		};
+	}
+
 // GETTERS AND SETTERS
 	private any function _getItemTypesService() {
 		return _itemTypesService;
@@ -2047,10 +2441,25 @@ component {
 	private void function _setRulesEngineFilterService( required any rulesEngineFilterService ) {
 		_rulesEngineFilterService = arguments.rulesEngineFilterService;
 	}
+
+	private any function _getRulesEngineWebRequestService() {
+		return _rulesEngineWebRequestService;
+	}
+	private void function _setRulesEngineWebRequestService( required any rulesEngineWebRequestService ) {
+		_rulesEngineWebRequestService = arguments.rulesEngineWebRequestService;
+	}
+
 	private any function _getCsvWriter() {
 		return _csvWriter;
 	}
 	private void function _setCsvWriter( required any csvWriter ) {
 		_csvWriter = arguments.csvWriter;
+	}
+
+	private any function _getSessionStorage() {
+		return _sessionStorage;
+	}
+	private void function _setSessionStorage( required any sessionStorage ) {
+		_sessionStorage = arguments.sessionStorage;
 	}
 }

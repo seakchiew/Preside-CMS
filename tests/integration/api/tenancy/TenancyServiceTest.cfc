@@ -309,14 +309,14 @@ component extends="testbox.system.BaseSpec"{
 			} );
 		} );
 
-		describe( "getTenancyFieldsForInsertData()", function() {
+		describe( "getTenancyFieldsForInsertOrUpdateData()", function() {
 			it( "should do nothing when the object is not using tenancy", function(){
 				var service    = _getService();
 				var objectName = "test";
 
 				service.$( "getObjectTenant" ).$args( objectName ).$results( "" );
 
-				expect( service.getTenancyFieldsForInsertData( objectName ) ).toBe( {} );
+				expect( service.getTenancyFieldsForInsertOrUpdateData( objectName ) ).toBe( {} );
 			} );
 
 			it( "should add the currently set tenant ID for the tenant that the object uses", function(){
@@ -331,7 +331,7 @@ component extends="testbox.system.BaseSpec"{
 				service.$( "getTenantFkForObject" ).$args( objectName ).$results( fk );
 				service.$( "getTenantId" ).$args( tenant ).$results( tenantId );
 
-				expect( service.getTenancyFieldsForInsertData( objectName ) ).toBe( expected );
+				expect( service.getTenancyFieldsForInsertOrUpdateData( objectName ) ).toBe( expected );
 			} );
 		} );
 
@@ -358,7 +358,9 @@ component extends="testbox.system.BaseSpec"{
 				mockColdbox.$( "handlerExists", false );
 
 				expect( service.getTenancyFilter( objectName ) ).toBe( {
-					filter = { "#objectName#.#fk#" = tenantId }
+					  filter = { "#objectName#.#fk#" = tenantId }
+					, filterObject        = objectName
+					, isTenancyFilter     = true
 				} );
 			} );
 
@@ -368,7 +370,10 @@ component extends="testbox.system.BaseSpec"{
 				var tenant     = "test";
 				var tenantId   = CreateUUId();
 				var fk         = CreateUUId();
-				var filter     = { crazy="test", test=CreateUUId() };
+				var filter     = {
+					  crazy="test"
+					, test=CreateUUId()
+				};
 
 				service.$( "getObjectTenant" ).$args( objectName ).$results( tenant );
 				service.$( "getTenantFkForObject" ).$args( objectName ).$results( fk );
@@ -381,7 +386,11 @@ component extends="testbox.system.BaseSpec"{
 					, eventArguments = {
 						  objectName    = objectName
 						, fk            = fk
-						, defaultFilter = { filter={ "#objectName#.#fk#" = tenantId } }
+						, defaultFilter = {
+							  filter={ "#objectName#.#fk#" = tenantId }
+							, filterObject        = objectName
+							, isTenancyFilter     = true
+						}
 						, tenantId      = tenantId
 					}
 				).$results( filter );
@@ -406,7 +415,11 @@ component extends="testbox.system.BaseSpec"{
 				var tenantId   = CreateUUId();
 				var tenantIds  = { test=tenantId };
 				var fk         = "some_fk";
-				var filter     = { filter = { "testthis.some_fk"=tenantId } };
+				var filter     = {
+					  filter = { "testthis.some_fk"=tenantId }
+					, filterObject        = objectName
+					, isTenancyFilter     = true
+				};
 
 				service.$( "getObjectTenant" ).$args( objectName ).$results( tenant );
 				service.$( "getTenantFkForObject" ).$args( objectName ).$results( fk );

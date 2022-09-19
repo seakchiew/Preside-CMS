@@ -5,23 +5,26 @@ component output="false" extends="tests.resources.HelperObjects.PresideTestCase"
 		mockLogger               = _getTestLogger();
 		mockResourceBundleSvc    = getMockbox().createEmptyMock( "preside.system.services.i18n.ResourceBundleService" );
 		mockAssetManagerSvc      = getMockbox().createEmptyMock( "preside.system.services.assetManager/AssetManagerService" );
+		mockInterceptorSvc       = getMockbox().createStub();
 
 		mockPresideObjectService.$( "getResourceBundleUriRoot", "preside-objects.test:" );
 		mockResourceBundleSvc.$( "getResource", "somevalue" );
+		mockInterceptorSvc.$( "processState" );
 
 		generator = new preside.system.services.validation.PresideFieldRuleGenerator(
 			  presideObjectService  = mockPresideObjectService
 			, logger                = mockLogger
 			, resourceBundleService = mockResourceBundleSvc
 			, assetManagerService   = mockAssetManagerSvc
+			, interceptorService    = mockInterceptorSvc
 		);
 	}
 
 // TESTS
 	function test01_getRulesForField_shouldReturnARequiredRule_whenFieldIsRequired(){
 		var expected = [{ fieldName="aField", validator="required", message="preside-objects.test:validation.aField.required.message" }];
-		var rules     = generator.getRulesForField( objectName="test", fieldName="aField", fieldAttributes={
-			required = true
+		var rules    = generator.getRulesForField( objectName="test", fieldName="aField", fieldAttributes={
+			  required = true
 		} );
 
 		super.assertEquals( expected, rules );
@@ -29,7 +32,7 @@ component output="false" extends="tests.resources.HelperObjects.PresideTestCase"
 
 	function test02_getRulesForField_shouldNotReturnRequiredRule_whenFieldIsNotRequired(){
 		var expected = [];
-		var rules     = generator.getRulesForField( objectName="test", fieldName="aField", fieldAttributes={
+		var rules    = generator.getRulesForField( objectName="test", fieldName="aField", fieldAttributes={
 			required = false
 		} );
 

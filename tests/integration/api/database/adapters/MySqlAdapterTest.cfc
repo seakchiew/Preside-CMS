@@ -686,8 +686,43 @@
 		</cfscript>
 	</cffunction>
 
+	<cffunction name="test35_supportsCountOverWindowFunction_shouldBeFalseForMariaDB" returntype="void">
+		<cfscript>
+			var adapter = _getAdapter( "mariadb" );
+			super.assertFalse( adapter.supportsCountOverWindowFunction() );
+		</cfscript>
+	</cffunction>
+
+	<cffunction name="test35_supportsCountOverWindowFunction_shouldBeFalseForMySQL" returntype="void">
+		<cfscript>
+			var adapter = _getAdapter( "mysql" );
+			super.assertFalse( adapter.supportsCountOverWindowFunction() );
+		</cfscript>
+	</cffunction>
+
+	<cffunction name="test36_applyOrderByAndMaxRowsSql_shouldReturnCorrectOrderByAndLimitClauses" returntype="void">
+		<cfscript>
+			var adapter = _getAdapter( "mysql" );
+			var sql     = "select a from b";
+
+			super.assertEquals( "#sql#"                         , adapter.applyOrderByAndMaxRowsSql( sql=sql ) );
+			super.assertEquals( "#sql#"                         , adapter.applyOrderByAndMaxRowsSql( sql=sql, orderBy=" ", maxRows=0, startRow=1) );
+			super.assertEquals( "#sql# order by col1,col2"      , adapter.applyOrderByAndMaxRowsSql( sql=sql, orderBy="col1,col2" ) );
+			super.assertEquals( "#sql# limit 0, 5"              , adapter.applyOrderByAndMaxRowsSql( sql=sql, maxRows=5 ) );
+			super.assertEquals( "#sql# limit 2, 10"             , adapter.applyOrderByAndMaxRowsSql( sql=sql, maxRows=10, startRow=3 ) );
+			super.assertEquals( "#sql# order by col1 limit 2, 5", adapter.applyOrderByAndMaxRowsSql( sql=sql, maxRows=5, startRow=3, orderBy="col1" ) );
+		</cfscript>
+	</cffunction>
+
 <!--- te helpers --->
 	<cffunction name="_getAdapter" access="private" returntype="any" output="false">
-		<cfreturn new preside.system.services.database.adapters.MySqlAdapter( argumentCollection = arguments ) />
+		<cfargument name="vendor" default="MariaDB">
+		<cfscript>
+			var mockedDbInfo = querySim( "database_productname,database_version
+			    MySql | 0.0.0-#arguments.vendor#"
+			);
+
+			return new preside.system.services.database.adapters.MySqlAdapter( dbInfo=mockedDbInfo );
+		</cfscript>
 	</cffunction>
 </cfcomponent>

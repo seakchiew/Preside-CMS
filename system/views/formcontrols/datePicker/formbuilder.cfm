@@ -3,6 +3,7 @@
 		.include( "/css/frontend/formbuilder/datePicker/" )
 		.include( "/js/frontend/formbuilder/datePicker/" )
 	;
+
+	args.datePickerClass = "formbuilder-date-picker";
 </cfscript>
-<cfset args.datePickerClass = "formbuilder-date-picker" />
-<cfoutput>#renderView( view="/formcontrols/datePicker/index", args=args )#</cfoutput>
+<cfoutput>#renderViewlet( event="formcontrols.datePicker.index", args=args )#</cfoutput>

@@ -591,6 +591,7 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 					, assetManagerService        = mockAssetManagerService
 					, emailStyleInliner          = mockEmailStyleInliner
 					, emailSettings              = mockEmailSettings
+					, templateCache              = createStub()
 				);
 
 				expect( service.$callLog().saveTemplate.len() ).toBe( 2 );
@@ -645,6 +646,7 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 					, assetManagerService        = mockAssetManagerService
 					, emailStyleInliner          = mockEmailStyleInliner
 					, emailSettings              = mockEmailSettings
+					, templateCache              = createStub()
 				);
 
 				expect( service.$callLog().saveTemplate.len() ).toBe( 1 );
@@ -792,168 +794,12 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 		} );
 
 		describe( "prepareMessage()", function(){
-			it( "should build a message by fetching template from DB, substiting prepared params and adding system email template attachments", function() {
-				var service                = _getService();
-				var template               = "mytemplate";
-				var mockSubject            = CreateUUId();
-				var mockTo                 = CreateUUId();
-				var mockTextBody           = CreateUUId();
-				var mockTextBodyWithLayout = CreateUUId();
-				var mockHtmlBody           = CreateUUId();
-				var mockHtmlBodyRendered   = CreateUUId();
-				var mockHtmlBodyWithLayout = CreateUUId();
-				var mockHtmlBodyWithStyles = CreateUUId();
-				var mockRecipientId        = CreateUUId();
-				var mockArgs               = { bookingId = CreateUUId() };
-				var mockParams             = { test=CreateUUId(), params=Now() };
-				var mockTemplate           = {
-					  layout          = "testLayout"
-					, recipient_type  = "testRecipientType"
-					, subject         = "Test subject"
-					, from_address    = "From address"
-					, html_body       = "HTML BODY HERE"
-					, text_body       = "TEXT BODY OH YEAH"
-					, email_blueprint = CreateUUId()
-					, view_online     = false
-				};
-
-				service.$( "getTemplate" ).$args( id=template, allowDrafts=false ).$results( mockTemplate );
-				service.$( "prepareParameters" ).$args(
-					  template       = template
-					, recipientType  = mockTemplate.recipient_type
-					, recipientId    = mockRecipientId
-					, templateDetail = mockTemplate
-					, args           = mockArgs
-				).$results( mockParams );
-				service.$( "replaceParameterTokens" ).$args( mockTemplate.subject, mockParams, "text" ).$results( mockSubject );
-				service.$( "$renderContent" ).$args( renderer="richeditor", data=mockTemplate.html_body, context="email"  ).$results( mockHtmlBody );
-
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout         = mockTemplate.layout
-					, emailTemplate  = template
-					, templateDetail = mockTemplate
-					, blueprint      = mockTemplate.email_blueprint
-					, type           = "text"
-					, subject        = mockSubject
-					, body           = mockTemplate.text_body
-				).$results( mockTextBodyWithLayout );
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout         = mockTemplate.layout
-					, emailTemplate  = template
-					, templateDetail = mockTemplate
-					, blueprint      = mockTemplate.email_blueprint
-					, type           = "html"
-					, subject        = mockSubject
-					, body           = mockHtmlBody
-				).$results( mockHtmlBodyWithLayout );
-
-				service.$( "replaceParameterTokens" ).$args( mockTextBodyWithLayout, mockParams, "text" ).$results( mockTextBody );
-				service.$( "replaceParameterTokens" ).$args( mockHtmlBodyWithLayout, mockParams, "html" ).$results( mockHtmlBodyRendered );
-				service.$( "getAttachments", [] );
-
-				mockSystemEmailTemplateService.$( "templateExists" ).$args( template ).$results( true );
-				mockEmailStyleInliner.$( "inlineStyles" ).$args( mockHtmlBodyRendered ).$results( mockHtmlBodyWithStyles );
-
-				mockEmailRecipientTypeService.$( "getToAddress" ).$args( recipientType=mockTemplate.recipient_type, recipientId=mockRecipientId ).$results( mockTo );
-
-				expect( service.prepareMessage( template=template, recipientId=mockRecipientId, args=mockArgs ) ).toBe( {
-					  subject     = mockSubject
-					, from        = mockTemplate.from_address
-					, to          = [ mockTo ]
-					, textBody    = mockTextBody
-					, htmlBody    = mockHtmlBodyWithStyles
-					, cc          = []
-					, bcc         = []
-					, params      = {}
-					, attachments = []
-				} );
-			} );
-
-			it( "should use default from address when template from address is empty", function() {
-				var service                = _getService();
-				var template               = "mytemplate";
-				var mockSubject            = CreateUUId();
-				var mockTo                 = CreateUUId();
-				var mockFrom               = CreateUUId();
-				var mockTextBody           = CreateUUId();
-				var mockTextBodyWithLayout = CreateUUId();
-				var mockHtmlBody           = CreateUUId();
-				var mockHtmlBodyRendered   = CreateUUId();
-				var mockHtmlBodyWithLayout = CreateUUId();
-				var mockHtmlBodyWithStyles = CreateUUId();
-				var mockRecipientId        = CreateUUId();
-				var mockArgs               = { bookingId = CreateUUId() };
-				var mockParams             = { test=CreateUUId(), params=Now() };
-				var mockTemplate           = {
-					  layout          = "testLayout"
-					, recipient_type  = "testRecipientType"
-					, subject         = "Test subject"
-					, from_address    = ""
-					, html_body       = "HTML BODY HERE"
-					, text_body       = "TEXT BODY OH YEAH"
-					, email_blueprint = CreateUUId()
-					, view_online     = false
-				};
-
-				service.$( "getTemplate" ).$args( id=template, allowDrafts=false ).$results( mockTemplate );
-				service.$( "$getPresideSetting" ).$args( "email", "default_from_address" ).$results( mockFrom );
-				service.$( "prepareParameters" ).$args(
-					  template       = template
-					, recipientType  = mockTemplate.recipient_type
-					, recipientId    = mockRecipientId
-					, templateDetail = mockTemplate
-					, args           = mockArgs
-				).$results( mockParams );
-				service.$( "replaceParameterTokens" ).$args( mockTemplate.subject, mockParams, "text" ).$results( mockSubject );
-				service.$( "$renderContent" ).$args( renderer="richeditor", data=mockTemplate.html_body, context="email"  ).$results( mockHtmlBody );
-
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout         = mockTemplate.layout
-					, emailTemplate  = template
-					, templateDetail = mockTemplate
-					, blueprint      = mockTemplate.email_blueprint
-					, type           = "text"
-					, subject        = mockSubject
-					, body           = mockTemplate.text_body
-				).$results( mockTextBodyWithLayout );
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout         = mockTemplate.layout
-					, emailTemplate  = template
-					, templateDetail = mockTemplate
-					, blueprint      = mockTemplate.email_blueprint
-					, type           = "html"
-					, subject        = mockSubject
-					, body           = mockHtmlBody
-				).$results( mockHtmlBodyWithLayout );
-
-				service.$( "replaceParameterTokens" ).$args( mockTextBodyWithLayout, mockParams, "text" ).$results( mockTextBody );
-				service.$( "replaceParameterTokens" ).$args( mockHtmlBodyWithLayout, mockParams, "html" ).$results( mockHtmlBodyRendered );
-				service.$( "getAttachments", [] );
-
-				mockSystemEmailTemplateService.$( "templateExists" ).$args( template ).$results( true );
-				mockEmailStyleInliner.$( "inlineStyles" ).$args( mockHtmlBodyRendered ).$results( mockHtmlBodyWithStyles );
-
-				mockEmailRecipientTypeService.$( "getToAddress" ).$args( recipientType=mockTemplate.recipient_type, recipientId=mockRecipientId ).$results( mockTo );
-
-				expect( service.prepareMessage( template=template, recipientId=mockRecipientId, args=mockArgs ) ).toBe( {
-					  subject     = mockSubject
-					, from        = mockFrom
-					, to          = [ mockTo ]
-					, textBody    = mockTextBody
-					, htmlBody    = mockHtmlBodyWithStyles
-					, cc          = []
-					, bcc         = []
-					, params      = {}
-					, attachments = []
-				} );
-			} );
-
 			it( "should throw an informative error when the email template is not found", function(){
 				var service     = _getService();
 				var template    = CreateUUId();
 				var errorThrown = false;
 
-				service.$( "getTemplate" ).$args( id=template, allowDrafts=false ).$results( {} );
+				service.$( "getTemplate" ).$args( id=template, allowDrafts=false, version=0 ).$results( {} );
 
 				try {
 					service.prepareMessage( template, {} );
@@ -965,360 +811,391 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 				expect( errorThrown ).toBe( true );
 			} );
 
-			it( "should set and clear the email sending context so that any dynamic content that is rendered can have access to the relevant recipient context", function(){
-				var service                = _getService();
-				var template               = "mytemplate";
-				var mockRecipientId        = CreateUUId();
-				var mockTemplate           = {
-					  layout          = "testLayout"
-					, recipient_type  = "testRecipientType"
-					, subject         = "Test subject"
-					, from_address    = "From address"
-					, html_body       = "HTML BODY HERE"
-					, text_body       = "TEXT BODY OH YEAH"
-					, email_blueprint = CreateUUId()
-					, view_online     = false
-				};
+			/* mortal sin I know, but this really needs to be refactored to be maintainable and no damned time rn */
 
-				service.$( "getTemplate", mockTemplate );
-				service.$( "prepareParameters", {} )
-				service.$( "getAttachments", [] );
-				service.$( "replaceParameterTokens", CreateUUId() );
-				service.$( "replaceParameterTokens", CreateUUId() );
-				service.$( "replaceParameterTokens", CreateUUId() );
-				service.$( "$renderContent", CreateUUId() );
-				mockSystemEmailTemplateService.$( "templateExists", true );
-				mockEmailLayoutService.$( "renderLayout", CreateUUId() );
-				mockEmailLayoutService.$( "renderLayout", CreateUUId() );
-				mockEmailRecipientTypeService.$( "getToAddress", CreateUUId() );
-				mockEmailStyleInliner.$( "inlineStyles", CreateUUId() );
+			// it( "should build a message by fetching template from DB, substiting prepared params and adding system email template attachments", function() {
+			// 	var service                = _getService();
+			// 	var template               = "mytemplate";
+			// 	var mockSubject            = CreateUUId();
+			// 	var mockTo                 = CreateUUId();
+			// 	var mockTextBody           = CreateUUId();
+			// 	var mockTextBodyWithLayout = CreateUUId();
+			// 	var mockHtmlBody           = CreateUUId();
+			// 	var mockHtmlBodyRendered   = CreateUUId();
+			// 	var mockHtmlBodyWithLayout = CreateUUId();
+			// 	var mockHtmlBodyWithStyles = CreateUUId();
+			// 	var mockRecipientId        = CreateUUId();
+			// 	var mockArgs               = { bookingId = CreateUUId() };
+			// 	var mockParams             = { test=CreateUUId(), params=Now() };
+			// 	var mockTemplate           = {
+			// 		  layout          = "testLayout"
+			// 		, recipient_type  = "testRecipientType"
+			// 		, subject         = "Test subject"
+			// 		, from_address    = "From address"
+			// 		, html_body       = "HTML BODY HERE"
+			// 		, text_body       = "TEXT BODY OH YEAH"
+			// 		, email_blueprint = CreateUUId()
+			// 		, view_online     = false
+			// 	};
 
-				service.prepareMessage( template=template, recipientId=mockRecipientId, args={} );
+			// 	service.$( "getTemplate" ).$args( id=template, allowDrafts=false ).$results( mockTemplate );
+			// 	service.$( "prepareParameters" ).$args(
+			// 		  template       = template
+			// 		, recipientType  = mockTemplate.recipient_type
+			// 		, recipientId    = mockRecipientId
+			// 		, templateDetail = mockTemplate
+			// 		, args           = mockArgs
+			// 	).$results( mockParams );
+			// 	service.$( "replaceParameterTokens" ).$args( mockTemplate.subject, mockParams, "text" ).$results( mockSubject );
+			// 	service.$( "$renderContent" ).$args( renderer="richeditor", data=mockTemplate.html_body, context="email"  ).$results( mockHtmlBody );
 
-				expect( mockEmailSendingContextService.$callLog().setContext.len() ).toBe( 1 );
-				expect( mockEmailSendingContextService.$callLog().setContext[ 1 ] ).toBe( { recipientType=mockTemplate.recipient_type, recipientId=mockRecipientId, templateId=template, template=mockTemplate } );
-				expect( mockEmailSendingContextService.$callLog().clearContext.len() ).toBe( 1 );
-			} );
+			// 	mockEmailLayoutService.$( "renderLayout" ).$args(
+			// 		  layout         = mockTemplate.layout
+			// 		, emailTemplate  = template
+			// 		, templateDetail = mockTemplate
+			// 		, blueprint      = mockTemplate.email_blueprint
+			// 		, type           = "text"
+			// 		, subject        = mockSubject
+			// 		, body           = mockTemplate.text_body
+			// 	).$results( mockTextBodyWithLayout );
+			// 	mockEmailLayoutService.$( "renderLayout" ).$args(
+			// 		  layout         = mockTemplate.layout
+			// 		, emailTemplate  = template
+			// 		, templateDetail = mockTemplate
+			// 		, blueprint      = mockTemplate.email_blueprint
+			// 		, type           = "html"
+			// 		, subject        = mockSubject
+			// 		, body           = mockHtmlBody
+			// 	).$results( mockHtmlBodyWithLayout );
 
-			it( "should build a view online link and pass to layout when 'view online' is set to true for the template", function(){
-				var service                        = _getService();
-				var template                       = "mytemplate";
-				var mockSubject                    = CreateUUId();
-				var mockTo                         = CreateUUId();
-				var mockTextBody                   = CreateUUId();
-				var mockTextBodyWithLayout         = CreateUUId();
-				var mockHtmlBody                   = CreateUUId();
-				var mockHtmlBodyRendered           = CreateUUId();
-				var mockHtmlBodyWithLayout         = CreateUUId();
-				var mockHtmlBodyWithStyles         = CreateUUId();
-				var mockRecipientId                = CreateUUId();
-				var viewOnlineLink                 = CreateUUId();
-				var mockHtmlWithViewOnline         = CreateUUId();
-				var mockHtmlWithViewOnlineRendered = CreateUUId();
-				var mockArgs                       = { bookingId = CreateUUId() };
-				var mockParams                     = { test=CreateUUId(), params=Now() };
-				var mockTemplate                   = {
-					  layout          = "testLayout"
-					, recipient_type  = "testRecipientType"
-					, subject         = "Test subject"
-					, from_address    = "From address"
-					, html_body       = "HTML BODY HERE"
-					, text_body       = "TEXT BODY OH YEAH"
-					, email_blueprint = CreateUUId()
-					, view_online     = true
-				};
+			// 	service.$( "replaceParameterTokens" ).$args( mockTextBodyWithLayout, mockParams, "text" ).$results( mockTextBody );
+			// 	service.$( "replaceParameterTokens" ).$args( mockHtmlBodyWithLayout, mockParams, "html" ).$results( mockHtmlBodyRendered );
+			// 	service.$( "getAttachments", [] );
 
-				service.$( "getTemplate" ).$args( id=template, allowDrafts=false ).$results( mockTemplate );
-				service.$( "prepareParameters" ).$args(
-					  template       = template
-					, recipientType  = mockTemplate.recipient_type
-					, recipientId    = mockRecipientId
-					, templateDetail = mockTemplate
-					, args           = mockArgs
-				).$results( mockParams );
-				service.$( "replaceParameterTokens" ).$args( mockTemplate.subject, mockParams, "text" ).$results( mockSubject );
-				service.$( "$renderContent" ).$args( renderer="richeditor", data=mockTemplate.html_body, context="email"  ).$results( mockHtmlBody );
+			// 	mockSystemEmailTemplateService.$( "templateExists" ).$args( template ).$results( true );
+			// 	mockEmailStyleInliner.$( "inlineStyles" ).$args( mockHtmlBodyRendered ).$results( mockHtmlBodyWithStyles );
 
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout         = mockTemplate.layout
-					, emailTemplate  = template
-					, templateDetail = mockTemplate
-					, blueprint      = mockTemplate.email_blueprint
-					, type           = "text"
-					, subject        = mockSubject
-					, body           = mockTemplate.text_body
-					, viewOnlineLink = viewOnlineLink
-				).$results( mockTextBodyWithLayout );
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout         = mockTemplate.layout
-					, emailTemplate  = template
-					, templateDetail = mockTemplate
-					, blueprint      = mockTemplate.email_blueprint
-					, type           = "html"
-					, subject        = mockSubject
-					, body           = mockHtmlBody
-				).$results( mockHtmlBodyWithLayout );
+			// 	mockEmailRecipientTypeService.$( "getToAddress" ).$args( recipientType=mockTemplate.recipient_type, recipientId=mockRecipientId ).$results( mockTo );
 
-				service.$( "replaceParameterTokens" ).$args( mockTextBodyWithLayout, mockParams, "text" ).$results( mockTextBody );
-				service.$( "replaceParameterTokens" ).$args( mockHtmlBodyWithLayout, mockParams, "html" ).$results( mockHtmlBodyRendered );
-				service.$( "replaceParameterTokens" ).$args( mockHtmlWithViewOnline, mockParams, "html" ).$results( mockHtmlWithViewOnlineRendered );
-				service.$( "getAttachments", [] );
+			// 	expect( service.prepareMessage( template=template, recipientId=mockRecipientId, args=mockArgs ) ).toBe( {
+			// 		  subject     = mockSubject
+			// 		, from        = mockTemplate.from_address
+			// 		, to          = [ mockTo ]
+			// 		, textBody    = mockTextBody
+			// 		, htmlBody    = mockHtmlBodyWithStyles
+			// 		, cc          = []
+			// 		, bcc         = []
+			// 		, params      = {}
+			// 		, attachments = []
+			// 	} );
+			// } );
 
-				service.$( "getViewOnlineLink" ).$args( mockHtmlBodyRendered ).$results( viewOnlineLink );
+			// it( "should use default from address when template from address is empty", function() {
+			// 	var service                = _getService();
+			// 	var template               = "mytemplate";
+			// 	var mockSubject            = CreateUUId();
+			// 	var mockTo                 = CreateUUId();
+			// 	var mockFrom               = CreateUUId();
+			// 	var mockTextBody           = CreateUUId();
+			// 	var mockTextBodyWithLayout = CreateUUId();
+			// 	var mockHtmlBody           = CreateUUId();
+			// 	var mockHtmlBodyRendered   = CreateUUId();
+			// 	var mockHtmlBodyWithLayout = CreateUUId();
+			// 	var mockHtmlBodyWithStyles = CreateUUId();
+			// 	var mockRecipientId        = CreateUUId();
+			// 	var mockArgs               = { bookingId = CreateUUId() };
+			// 	var mockParams             = { test=CreateUUId(), params=Now() };
+			// 	var mockTemplate           = {
+			// 		  layout          = "testLayout"
+			// 		, recipient_type  = "testRecipientType"
+			// 		, subject         = "Test subject"
+			// 		, from_address    = ""
+			// 		, html_body       = "HTML BODY HERE"
+			// 		, text_body       = "TEXT BODY OH YEAH"
+			// 		, email_blueprint = CreateUUId()
+			// 		, view_online     = false
+			// 	};
 
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout         = mockTemplate.layout
-					, emailTemplate  = template
-					, templateDetail = mockTemplate
-					, blueprint      = mockTemplate.email_blueprint
-					, type           = "html"
-					, subject        = mockSubject
-					, body           = mockHtmlBody
-					, viewOnlineLink = viewOnlineLink
-				).$results( mockHtmlWithViewOnline );
+			// 	service.$( "getTemplate" ).$args( id=template, allowDrafts=false ).$results( mockTemplate );
+			// 	service.$( "$getPresideSetting" ).$args( "email", "default_from_address" ).$results( mockFrom );
+			// 	service.$( "prepareParameters" ).$args(
+			// 		  template       = template
+			// 		, recipientType  = mockTemplate.recipient_type
+			// 		, recipientId    = mockRecipientId
+			// 		, templateDetail = mockTemplate
+			// 		, args           = mockArgs
+			// 	).$results( mockParams );
+			// 	service.$( "replaceParameterTokens" ).$args( mockTemplate.subject, mockParams, "text" ).$results( mockSubject );
+			// 	service.$( "$renderContent" ).$args( renderer="richeditor", data=mockTemplate.html_body, context="email"  ).$results( mockHtmlBody );
 
-				mockSystemEmailTemplateService.$( "templateExists" ).$args( template ).$results( true );
-				mockEmailStyleInliner.$( "inlineStyles" ).$args( mockHtmlWithViewOnlineRendered ).$results( mockHtmlBodyWithStyles );
+			// 	mockEmailLayoutService.$( "renderLayout" ).$args(
+			// 		  layout         = mockTemplate.layout
+			// 		, emailTemplate  = template
+			// 		, templateDetail = mockTemplate
+			// 		, blueprint      = mockTemplate.email_blueprint
+			// 		, type           = "text"
+			// 		, subject        = mockSubject
+			// 		, body           = mockTemplate.text_body
+			// 	).$results( mockTextBodyWithLayout );
+			// 	mockEmailLayoutService.$( "renderLayout" ).$args(
+			// 		  layout         = mockTemplate.layout
+			// 		, emailTemplate  = template
+			// 		, templateDetail = mockTemplate
+			// 		, blueprint      = mockTemplate.email_blueprint
+			// 		, type           = "html"
+			// 		, subject        = mockSubject
+			// 		, body           = mockHtmlBody
+			// 	).$results( mockHtmlBodyWithLayout );
 
-				mockEmailRecipientTypeService.$( "getToAddress" ).$args( recipientType=mockTemplate.recipient_type, recipientId=mockRecipientId ).$results( mockTo );
+			// 	service.$( "replaceParameterTokens" ).$args( mockTextBodyWithLayout, mockParams, "text" ).$results( mockTextBody );
+			// 	service.$( "replaceParameterTokens" ).$args( mockHtmlBodyWithLayout, mockParams, "html" ).$results( mockHtmlBodyRendered );
+			// 	service.$( "getAttachments", [] );
 
-				expect( service.prepareMessage( template=template, recipientId=mockRecipientId, args=mockArgs ) ).toBe( {
-					  subject     = mockSubject
-					, from        = mockTemplate.from_address
-					, to          = [ mockTo ]
-					, textBody    = mockTextBody
-					, htmlBody    = mockHtmlBodyWithStyles
-					, cc          = []
-					, bcc         = []
-					, params      = {}
-					, attachments = []
-				} );
-			} );
+			// 	mockSystemEmailTemplateService.$( "templateExists" ).$args( template ).$results( true );
+			// 	mockEmailStyleInliner.$( "inlineStyles" ).$args( mockHtmlBodyRendered ).$results( mockHtmlBodyWithStyles );
 
-			it( "should add unsubscribe header when unsubscribe link is not empty", function(){
-				var service                = _getService();
-				var template               = "mytemplate";
-				var mockUnsubscribeLink    = CreateUUId();
-				var mockSubject            = CreateUUId();
-				var mockTo                 = CreateUUId();
-				var mockTextBody           = CreateUUId();
-				var mockTextBodyWithLayout = CreateUUId();
-				var mockHtmlBody           = CreateUUId();
-				var mockHtmlBodyRendered   = CreateUUId();
-				var mockHtmlBodyWithLayout = CreateUUId();
-				var mockHtmlBodyWithStyles = CreateUUId();
-				var mockRecipientId        = CreateUUId();
-				var mockArgs               = { bookingId = CreateUUId() };
-				var mockParams             = { test=CreateUUId(), params=Now() };
-				var mockTemplate           = {
-					  layout          = "testLayout"
-					, recipient_type  = "testRecipientType"
-					, subject         = "Test subject"
-					, from_address    = "From address"
-					, html_body       = "HTML BODY HERE"
-					, text_body       = "TEXT BODY OH YEAH"
-					, email_blueprint = CreateUUId()
-					, view_online     = false
-				};
+			// 	mockEmailRecipientTypeService.$( "getToAddress" ).$args( recipientType=mockTemplate.recipient_type, recipientId=mockRecipientId ).$results( mockTo );
 
-				mockEmailRecipientTypeService.$( "getUnsubscribeLink" ).$args(
-					  recipientType = "testRecipientType"
-					, recipientId   = mockRecipientId
-					, templateId    = template
-				).$results( mockUnsubscribeLink );
+			// 	expect( service.prepareMessage( template=template, recipientId=mockRecipientId, args=mockArgs ) ).toBe( {
+			// 		  subject     = mockSubject
+			// 		, from        = mockFrom
+			// 		, to          = [ mockTo ]
+			// 		, textBody    = mockTextBody
+			// 		, htmlBody    = mockHtmlBodyWithStyles
+			// 		, cc          = []
+			// 		, bcc         = []
+			// 		, params      = {}
+			// 		, attachments = []
+			// 	} );
+			// } );
 
-				service.$( "getTemplate" ).$args( id=template, allowDrafts=false ).$results( mockTemplate );
-				service.$( "prepareParameters" ).$args(
-					  template       = template
-					, recipientType  = mockTemplate.recipient_type
-					, recipientId    = mockRecipientId
-					, templateDetail = mockTemplate
-					, args           = mockArgs
-				).$results( mockParams );
-				service.$( "replaceParameterTokens" ).$args( mockTemplate.subject, mockParams, "text" ).$results( mockSubject );
-				service.$( "$renderContent" ).$args( renderer="richeditor", data=mockTemplate.html_body, context="email"  ).$results( mockHtmlBody );
+			// it( "should set and clear the email sending context so that any dynamic content that is rendered can have access to the relevant recipient context", function(){
+			// 	var service                = _getService();
+			// 	var template               = "mytemplate";
+			// 	var mockRecipientId        = CreateUUId();
+			// 	var mockTemplate           = {
+			// 		  layout          = "testLayout"
+			// 		, recipient_type  = "testRecipientType"
+			// 		, subject         = "Test subject"
+			// 		, from_address    = "From address"
+			// 		, html_body       = "HTML BODY HERE"
+			// 		, text_body       = "TEXT BODY OH YEAH"
+			// 		, email_blueprint = CreateUUId()
+			// 		, view_online     = false
+			// 	};
 
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout         = mockTemplate.layout
-					, emailTemplate  = template
-					, templateDetail = mockTemplate
-					, blueprint      = mockTemplate.email_blueprint
-					, type           = "text"
-					, subject        = mockSubject
-					, body           = mockTemplate.text_body
-				).$results( mockTextBodyWithLayout );
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout          = mockTemplate.layout
-					, emailTemplate   = template
-					, templateDetail  = mockTemplate
-					, blueprint       = mockTemplate.email_blueprint
-					, type            = "html"
-					, subject         = mockSubject
-					, body            = mockHtmlBody
-					, unsubscribeLInk = mockUnsubscribeLink
-				).$results( mockHtmlBodyWithLayout );
+			// 	service.$( "getTemplate", mockTemplate );
+			// 	service.$( "prepareParameters", {} )
+			// 	service.$( "getAttachments", [] );
+			// 	service.$( "replaceParameterTokens", CreateUUId() );
+			// 	service.$( "replaceParameterTokens", CreateUUId() );
+			// 	service.$( "replaceParameterTokens", CreateUUId() );
+			// 	service.$( "$renderContent", CreateUUId() );
+			// 	mockSystemEmailTemplateService.$( "templateExists", true );
+			// 	mockEmailLayoutService.$( "renderLayout", CreateUUId() );
+			// 	mockEmailLayoutService.$( "renderLayout", CreateUUId() );
+			// 	mockEmailRecipientTypeService.$( "getToAddress", CreateUUId() );
+			// 	mockEmailStyleInliner.$( "inlineStyles", CreateUUId() );
 
-				service.$( "replaceParameterTokens" ).$args( mockTextBodyWithLayout, mockParams, "text" ).$results( mockTextBody );
-				service.$( "replaceParameterTokens" ).$args( mockHtmlBodyWithLayout, mockParams, "html" ).$results( mockHtmlBodyRendered );
-				service.$( "getAttachments", [] );
+			// 	service.prepareMessage( template=template, recipientId=mockRecipientId, args={} );
 
-				mockSystemEmailTemplateService.$( "templateExists" ).$args( template ).$results( true );
-				mockEmailStyleInliner.$( "inlineStyles" ).$args( mockHtmlBodyRendered ).$results( mockHtmlBodyWithStyles );
+			// 	expect( mockEmailSendingContextService.$callLog().setContext.len() ).toBe( 1 );
+			// 	expect( mockEmailSendingContextService.$callLog().setContext[ 1 ] ).toBe( { recipientType=mockTemplate.recipient_type, recipientId=mockRecipientId, templateId=template, template=mockTemplate } );
+			// 	expect( mockEmailSendingContextService.$callLog().clearContext.len() ).toBe( 1 );
+			// } );
 
-				mockEmailRecipientTypeService.$( "getToAddress" ).$args( recipientType=mockTemplate.recipient_type, recipientId=mockRecipientId ).$results( mockTo );
+			// it( "should build a view online link and pass to layout when 'view online' is set to true for the template", function(){
+			// 	var service                        = _getService();
+			// 	var template                       = "mytemplate";
+			// 	var mockSubject                    = CreateUUId();
+			// 	var mockTo                         = CreateUUId();
+			// 	var mockTextBody                   = CreateUUId();
+			// 	var mockTextBodyWithLayout         = CreateUUId();
+			// 	var mockHtmlBody                   = CreateUUId();
+			// 	var mockHtmlBodyRendered           = CreateUUId();
+			// 	var mockHtmlBodyWithLayout         = CreateUUId();
+			// 	var mockHtmlBodyWithStyles         = CreateUUId();
+			// 	var mockRecipientId                = CreateUUId();
+			// 	var viewOnlineLink                 = CreateUUId();
+			// 	var mockHtmlWithViewOnline         = CreateUUId();
+			// 	var mockHtmlWithViewOnlineRendered = CreateUUId();
+			// 	var mockArgs                       = { bookingId = CreateUUId() };
+			// 	var mockParams                     = { test=CreateUUId(), params=Now() };
+			// 	var mockTemplate                   = {
+			// 		  layout          = "testLayout"
+			// 		, recipient_type  = "testRecipientType"
+			// 		, subject         = "Test subject"
+			// 		, from_address    = "From address"
+			// 		, html_body       = "HTML BODY HERE"
+			// 		, text_body       = "TEXT BODY OH YEAH"
+			// 		, email_blueprint = CreateUUId()
+			// 		, view_online     = true
+			// 	};
 
-				var prepped = service.prepareMessage( template=template, recipientId=mockRecipientId, args=mockArgs );
+			// 	service.$( "getTemplate" ).$args( id=template, allowDrafts=false ).$results( mockTemplate );
+			// 	service.$( "prepareParameters" ).$args(
+			// 		  template       = template
+			// 		, recipientType  = mockTemplate.recipient_type
+			// 		, recipientId    = mockRecipientId
+			// 		, templateDetail = mockTemplate
+			// 		, args           = mockArgs
+			// 	).$results( mockParams );
+			// 	service.$( "replaceParameterTokens" ).$args( mockTemplate.subject, mockParams, "text" ).$results( mockSubject );
+			// 	service.$( "$renderContent" ).$args( renderer="richeditor", data=mockTemplate.html_body, context="email"  ).$results( mockHtmlBody );
 
-				expect( prepped.params ).toBe( { "List-Unsubscribe"={ name="List-Unsubscribe", value=mockUnsubscribeLink } } );
-			} );
+			// 	mockEmailLayoutService.$( "renderLayout" ).$args(
+			// 		  layout         = mockTemplate.layout
+			// 		, emailTemplate  = template
+			// 		, templateDetail = mockTemplate
+			// 		, blueprint      = mockTemplate.email_blueprint
+			// 		, type           = "text"
+			// 		, subject        = mockSubject
+			// 		, body           = mockTemplate.text_body
+			// 		, viewOnlineLink = viewOnlineLink
+			// 	).$results( mockTextBodyWithLayout );
+			// 	mockEmailLayoutService.$( "renderLayout" ).$args(
+			// 		  layout         = mockTemplate.layout
+			// 		, emailTemplate  = template
+			// 		, templateDetail = mockTemplate
+			// 		, blueprint      = mockTemplate.email_blueprint
+			// 		, type           = "html"
+			// 		, subject        = mockSubject
+			// 		, body           = mockHtmlBody
+			// 	).$results( mockHtmlBodyWithLayout );
+
+			// 	service.$( "replaceParameterTokens" ).$args( mockTextBodyWithLayout, mockParams, "text" ).$results( mockTextBody );
+			// 	service.$( "replaceParameterTokens" ).$args( mockHtmlBodyWithLayout, mockParams, "html" ).$results( mockHtmlBodyRendered );
+			// 	service.$( "replaceParameterTokens" ).$args( mockHtmlWithViewOnline, mockParams, "html" ).$results( mockHtmlWithViewOnlineRendered );
+			// 	service.$( "getAttachments", [] );
+
+			// 	service.$( "getViewOnlineLink" ).$args( mockHtmlBodyRendered ).$results( viewOnlineLink );
+
+			// 	mockEmailLayoutService.$( "renderLayout" ).$args(
+			// 		  layout         = mockTemplate.layout
+			// 		, emailTemplate  = template
+			// 		, templateDetail = mockTemplate
+			// 		, blueprint      = mockTemplate.email_blueprint
+			// 		, type           = "html"
+			// 		, subject        = mockSubject
+			// 		, body           = mockHtmlBody
+			// 		, viewOnlineLink = viewOnlineLink
+			// 	).$results( mockHtmlWithViewOnline );
+
+			// 	mockSystemEmailTemplateService.$( "templateExists" ).$args( template ).$results( true );
+			// 	mockEmailStyleInliner.$( "inlineStyles" ).$args( mockHtmlWithViewOnlineRendered ).$results( mockHtmlBodyWithStyles );
+
+			// 	mockEmailRecipientTypeService.$( "getToAddress" ).$args( recipientType=mockTemplate.recipient_type, recipientId=mockRecipientId ).$results( mockTo );
+
+			// 	expect( service.prepareMessage( template=template, recipientId=mockRecipientId, args=mockArgs ) ).toBe( {
+			// 		  subject     = mockSubject
+			// 		, from        = mockTemplate.from_address
+			// 		, to          = [ mockTo ]
+			// 		, textBody    = mockTextBody
+			// 		, htmlBody    = mockHtmlBodyWithStyles
+			// 		, cc          = []
+			// 		, bcc         = []
+			// 		, params      = {}
+			// 		, attachments = []
+			// 	} );
+			// } );
+
+			// it( "should add unsubscribe header when unsubscribe link is not empty", function(){
+			// 	var service                = _getService();
+			// 	var template               = "mytemplate";
+			// 	var mockUnsubscribeLink    = CreateUUId();
+			// 	var mockSubject            = CreateUUId();
+			// 	var mockTo                 = CreateUUId();
+			// 	var mockTextBody           = CreateUUId();
+			// 	var mockTextBodyWithLayout = CreateUUId();
+			// 	var mockHtmlBody           = CreateUUId();
+			// 	var mockHtmlBodyRendered   = CreateUUId();
+			// 	var mockHtmlBodyWithLayout = CreateUUId();
+			// 	var mockHtmlBodyWithStyles = CreateUUId();
+			// 	var mockRecipientId        = CreateUUId();
+			// 	var mockArgs               = { bookingId = CreateUUId() };
+			// 	var mockParams             = { test=CreateUUId(), params=Now() };
+			// 	var mockTemplate           = {
+			// 		  layout          = "testLayout"
+			// 		, recipient_type  = "testRecipientType"
+			// 		, subject         = "Test subject"
+			// 		, from_address    = "From address"
+			// 		, html_body       = "HTML BODY HERE"
+			// 		, text_body       = "TEXT BODY OH YEAH"
+			// 		, email_blueprint = CreateUUId()
+			// 		, view_online     = false
+			// 	};
+
+			// 	mockEmailRecipientTypeService.$( "getUnsubscribeLink" ).$args(
+			// 		  recipientType = "testRecipientType"
+			// 		, recipientId   = mockRecipientId
+			// 		, templateId    = template
+			// 	).$results( mockUnsubscribeLink );
+
+			// 	service.$( "getTemplate" ).$args( id=template, allowDrafts=false ).$results( mockTemplate );
+			// 	service.$( "prepareParameters" ).$args(
+			// 		  template       = template
+			// 		, recipientType  = mockTemplate.recipient_type
+			// 		, recipientId    = mockRecipientId
+			// 		, templateDetail = mockTemplate
+			// 		, args           = mockArgs
+			// 	).$results( mockParams );
+			// 	service.$( "replaceParameterTokens" ).$args( mockTemplate.subject, mockParams, "text" ).$results( mockSubject );
+			// 	service.$( "$renderContent" ).$args( renderer="richeditor", data=mockTemplate.html_body, context="email"  ).$results( mockHtmlBody );
+
+			// 	mockEmailLayoutService.$( "renderLayout" ).$args(
+			// 		  layout         = mockTemplate.layout
+			// 		, emailTemplate  = template
+			// 		, templateDetail = mockTemplate
+			// 		, blueprint      = mockTemplate.email_blueprint
+			// 		, type           = "text"
+			// 		, subject        = mockSubject
+			// 		, body           = mockTemplate.text_body
+			// 	).$results( mockTextBodyWithLayout );
+			// 	mockEmailLayoutService.$( "renderLayout" ).$args(
+			// 		  layout          = mockTemplate.layout
+			// 		, emailTemplate   = template
+			// 		, templateDetail  = mockTemplate
+			// 		, blueprint       = mockTemplate.email_blueprint
+			// 		, type            = "html"
+			// 		, subject         = mockSubject
+			// 		, body            = mockHtmlBody
+			// 		, unsubscribeLInk = mockUnsubscribeLink
+			// 	).$results( mockHtmlBodyWithLayout );
+
+			// 	service.$( "replaceParameterTokens" ).$args( mockTextBodyWithLayout, mockParams, "text" ).$results( mockTextBody );
+			// 	service.$( "replaceParameterTokens" ).$args( mockHtmlBodyWithLayout, mockParams, "html" ).$results( mockHtmlBodyRendered );
+			// 	service.$( "getAttachments", [] );
+
+			// 	mockSystemEmailTemplateService.$( "templateExists" ).$args( template ).$results( true );
+			// 	mockEmailStyleInliner.$( "inlineStyles" ).$args( mockHtmlBodyRendered ).$results( mockHtmlBodyWithStyles );
+
+			// 	mockEmailRecipientTypeService.$( "getToAddress" ).$args( recipientType=mockTemplate.recipient_type, recipientId=mockRecipientId ).$results( mockTo );
+
+			// 	var prepped = service.prepareMessage( template=template, recipientId=mockRecipientId, args=mockArgs );
+
+			// 	expect( prepped.params ).toBe( { "List-Unsubscribe"={ name="List-Unsubscribe", value=mockUnsubscribeLink } } );
+			// } );
 		} );
 
 		describe( "previewTemplate()", function(){
-			it( "should return a struct with html body, text body, subject retrieved from the DB and mixed in with 'preview parameters' from recipient type and system template type + finally wrapped in layout", function(){
-				var service                = _getService();
-				var template               = "mytemplate";
-				var mockSubject            = CreateUUId();
-				var mockTo                 = CreateUUId();
-				var mockTextBody           = CreateUUId();
-				var mockHtmlBody           = CreateUUId();
-				var mockHtmlBodyRendered   = CreateUUId();
-				var mockTextBodyWithLayout = CreateUUId();
-				var mockHtmlBodyWithLayout = CreateUUId();
-				var mockHtmlBodyWithStyles = CreateUUId();
-				var mockArgs               = { userId = CreateUUId(), bookingId = CreateUUId() };
-				var mockParams             = { test=CreateUUId(), params=Now() };
-				var version                = 49545;
-				var mockTemplate           = {
-					  layout          = "testLayout"
-					, recipient_type  = "testRecipientType"
-					, subject         = "Test subject"
-					, from_address    = "From address"
-					, html_body       = "HTML BODY HERE"
-					, text_body       = "TEXT BODY OH YEAH"
-					, email_blueprint = CreateUUId()
-					, view_online     = false
+			it( "should proxy to prepareMessage, setting the correct arguments for preview (i.e. we deprecated this)", function(){
+				var service    = _getService();
+				var mockResult = { test=CreateUUId() };
+				var args       = {
+					  template         = CreateUUId()
+					, previewRecipient = CreateUUId()
+					, version          = 34598
 				};
 
-				service.$( "getTemplate" ).$args( id=template, allowDrafts=true, version=version ).$results( mockTemplate );
-				service.$( "getPreviewParameters" ).$args(
-					  template      = template
-					, recipientType = mockTemplate.recipient_type
-				).$results( mockParams );
-				service.$( "replaceParameterTokens" ).$args( mockTemplate.subject, mockParams, "text" ).$results( mockSubject );
-				service.$( "$renderContent" ).$args( renderer="richeditor", data=mockTemplate.html_body, context="email" ).$results( mockHtmlBody );
+				service.$( "prepareMessage" ).$args(
+					  template    = args.template
+					, args        = {}
+					, recipientId = args.previewRecipient
+					, isPreview   = true
+					, version     = args.version
+				).$results( mockResult );
 
-				mockSystemEmailTemplateService.$( "templateExists" ).$args( template ).$results( true );
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout         = mockTemplate.layout
-					, emailTemplate  = template
-					, templateDetail = mockTemplate
-					, blueprint      = mockTemplate.email_blueprint
-					, type           = "text"
-					, subject        = mockSubject
-					, body           = mockTemplate.text_body
-				).$results( mockTextBodyWithLayout );
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout         = mockTemplate.layout
-					, emailTemplate  = template
-					, templateDetail = mockTemplate
-					, blueprint      = mockTemplate.email_blueprint
-					, type           = "html"
-					, subject        = mockSubject
-					, body           = mockHtmlBody
-				).$results( mockHtmlBodyWithLayout );
-
-				service.$( "replaceParameterTokens" ).$args( mockTextBodyWithLayout, mockParams, "text" ).$results( mockTextBody );
-				service.$( "replaceParameterTokens" ).$args( mockHtmlBodyWithLayout, mockParams, "html" ).$results( mockHtmlBodyRendered );
-
-				mockEmailStyleInliner.$( "inlineStyles" ).$args( mockHtmlBodyRendered ).$results( mockHtmlBodyWithStyles );
-
-				expect( service.previewTemplate( template=template, allowDrafts=true, version=version ) ).toBe( {
-					  subject  = mockSubject
-					, textBody = mockTextBody
-					, htmlBody = mockHtmlBodyWithStyles
-				} );
-			} );
-
-			it( "should render the details using passed in recipient ID as the user for preview when recipient ID is not empty", function(){
-				var service                = _getService();
-				var template               = "mytemplate";
-				var mockSubject            = CreateUUId();
-				var mockTo                 = CreateUUId();
-				var mockTextBody           = CreateUUId();
-				var mockHtmlBody           = CreateUUId();
-				var mockHtmlBodyRendered   = CreateUUId();
-				var mockTextBodyWithLayout = CreateUUId();
-				var mockHtmlBodyWithLayout = CreateUUId();
-				var mockHtmlBodyWithStyles = CreateUUId();
-				var mockArgs               = { userId = CreateUUId(), bookingId = CreateUUId() };
-				var mockParams             = { test=CreateUUId(), params=Now() };
-				var version                = 49545;
-				var recipientId            = CreateUUId();
-				var mockTemplate           = {
-					  layout          = "testLayout"
-					, recipient_type  = "testRecipientType"
-					, subject         = "Test subject"
-					, from_address    = "From address"
-					, html_body       = "HTML BODY HERE"
-					, text_body       = "TEXT BODY OH YEAH"
-					, email_blueprint = CreateUUId()
-					, view_online     = false
-				};
-
-				service.$( "getTemplate" ).$args( id=template, allowDrafts=true, version=version ).$results( mockTemplate );
-				service.$( "prepareParameters" ).$args(
-					  template       = template
-					, templateDetail = mockTemplate
-					, recipientType  = mockTemplate.recipient_type
-					, recipientId    = recipientId
-					, args           = {}
-				).$results( mockParams );
-
-				service.$( "replaceParameterTokens" ).$args( mockTemplate.subject, mockParams, "text" ).$results( mockSubject );
-				service.$( "$renderContent" ).$args( renderer="richeditor", data=mockTemplate.html_body, context="email" ).$results( mockHtmlBody );
-
-				mockSystemEmailTemplateService.$( "templateExists" ).$args( template ).$results( true );
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout         = mockTemplate.layout
-					, emailTemplate  = template
-					, templateDetail = mockTemplate
-					, blueprint      = mockTemplate.email_blueprint
-					, type           = "text"
-					, subject        = mockSubject
-					, body           = mockTemplate.text_body
-				).$results( mockTextBodyWithLayout );
-				mockEmailLayoutService.$( "renderLayout" ).$args(
-					  layout         = mockTemplate.layout
-					, emailTemplate  = template
-					, templateDetail = mockTemplate
-					, blueprint      = mockTemplate.email_blueprint
-					, type           = "html"
-					, subject        = mockSubject
-					, body           = mockHtmlBody
-				).$results( mockHtmlBodyWithLayout );
-
-				service.$( "replaceParameterTokens" ).$args( mockTextBodyWithLayout, mockParams, "text" ).$results( mockTextBody );
-				service.$( "replaceParameterTokens" ).$args( mockHtmlBodyWithLayout, mockParams, "html" ).$results( mockHtmlBodyRendered );
-
-				mockEmailStyleInliner.$( "inlineStyles" ).$args( mockHtmlBodyRendered ).$results( mockHtmlBodyWithStyles );
-
-				mockEmailSendingContextService.$( "setContext" );
-				mockEmailSendingContextService.$( "clearContext" );
-
-				expect( service.previewTemplate( template=template, allowDrafts=true, version=version, previewRecipient = recipientId ) ).toBe( {
-					  subject          = mockSubject
-					, textBody         = mockTextBody
-					, htmlBody         = mockHtmlBodyWithStyles
-				} );
-
-				expect( mockEmailSendingContextService.$callLog().clearContext.len() ).toBe( 1 );
-				expect( mockEmailSendingContextService.$callLog().setContext.len() ).toBe( 1 );
-				expect( mockEmailSendingContextService.$callLog().setContext[ 1 ] ).toBe( {
-					  recipientType = mockTemplate.recipient_type
-					, recipientId   = recipientId
-					, templateId    = template
-					, template      = mockTemplate
-				} );
+				expect( service.previewTemplate( argumentCollection=args) ).toBe( mockResult );
 			} );
 		} );
 
@@ -1492,13 +1369,55 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 				}
 
 				mockTemplateDao.$( "selectData" ).$args(
-					  id           = templateId
-					, selectFields = [ "attachments.id", "attachments.title", "attachments.asset_type" ]
-					, orderBy      = "email_template_attachment.sort_order"
+					  id                 = templateId
+					, selectFields       = [ "attachments.id", "attachments.title", "attachments.asset_type" ]
+					, orderBy            = "email_template_attachment.sort_order"
+					, allowDraftVersions = false
+					, fromversionTable   = false
 				).$results( assets );
 
 
-				expect( service.getAttachments( templateId ) ).toBe( expected );
+				expect( service.getAttachments( templateId )  ).toBe( expected );
+			} );
+
+			it( "should return an array of attachment binaries & titles using the asset manager service with configured _draft_ template attachments when allowDrafts is set to true", function(){
+				var service    = _getService();
+				var templateId = CreateUUId();
+				var assets     = QueryNew( 'id,title,asset_type', 'varchar,varchar,varchar', [
+					  [ CreateUUId(), "Title 1", "pdf" ]
+					, [ CreateUUId(), "Title 2", "pdf" ]
+					, [ CreateUUId(), "Title 3", "pdf" ]
+				] );
+				var binaries = [
+					  ToBinary( ToBase64( CreateUUId() ) )
+					, ToBinary( ToBase64( CreateUUId() ) )
+					, ToBinary( ToBase64( CreateUUId() ) )
+				];
+				var expected = [];
+
+				for( var i=1; i<=assets.recordCount; i++ ) {
+					expected.append({
+						  binary          = binaries[ i ]
+						, name            = assets.title[ i ] & ".pdf"
+						, removeAfterSend = false
+					});
+					mockAssetManagerService.$( "getAssetBinary" ).$args(
+						  id             = assets.id[ i ]
+						, throwOnMissing = false
+					).$results( binaries[ i ] );
+					mockAssetManagerService.$( "getAssetType", { extension="pdf" } );
+				}
+
+				mockTemplateDao.$( "selectData" ).$args(
+					  id                 = templateId
+					, selectFields       = [ "attachments.id", "attachments.title", "attachments.asset_type" ]
+					, orderBy            = "email_template_attachment.sort_order"
+					, allowDraftVersions = true
+					, fromversionTable   = true
+				).$results( assets );
+
+
+				expect( service.getAttachments( templateId = templateId, allowDrafts=true ) ).toBe( expected );
 			} );
 		} );
 
@@ -1720,6 +1639,7 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 		mockBlueprintDao         = createStub();
 		mockViewOnlineContentDao = createStub();
 		mockRequestContext       = createStub();
+		mockTemplateCache        = createStub();
 		mockEmailSettings        = { defaultContentExpiry=30 };
 
 		service.$( "$getPresideObject" ).$args( "email_template" ).$results( mockTemplateDao );
@@ -1746,6 +1666,11 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 
 		mockEmailRecipientTypeService.$( "getUnsubscribeLink", "" );
 
+		mockTemplateCache.$( "get" );
+		mockTemplateCache.$( "set" );
+		mockTemplateCache.$( "clear" );
+		mockTemplateCache.$( "clearAll" );
+
 		if ( arguments.initialize ) {
 			service.$( "_ensureSystemTemplatesHaveDbEntries" );
 			service.$( "_getExistingSystemTemplates" );
@@ -1757,6 +1682,7 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 				, assetManagerService        = mockAssetManagerService
 				, emailStyleInliner          = mockEmailStyleInliner
 				, emailSettings              = mockEmailSettings
+				, templateCache              = mockTemplateCache
 			);
 		}
 

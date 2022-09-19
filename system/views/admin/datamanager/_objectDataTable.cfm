@@ -1,31 +1,35 @@
 <cfscript>
-	param name="args.objectName"          type="string";
-	param name="args.multiActions"        type="string"  default="";
-	param name="args.useMultiActions"     type="boolean" default=false;
-	param name="args.multiActionViewlet"  type="string"  default="admin.datamanager._multiActions";
-	param name="args.multiActionUrl"      type="string"  default="";
-	param name="args.isMultilingual"      type="boolean" default=false;
-	param name="args.draftsEnabled"       type="boolean" default=false;
-	param name="args.noActions"           type="boolean" default=false;
-	param name="args.footerEnabled"       type="boolean" default=false;
-	param name="args.gridFields"          type="array";
-	param name="args.sortableFields"      type="array"   default=[];
-	param name="args.hiddenGridFields"    type="array"   default=[];
-	param name="args.filterContextData"   type="struct"  default={};
-	param name="args.allowSearch"         type="boolean" default=true;
-	param name="args.allowFilter"         type="boolean" default=true;
-	param name="args.allowDataExport"     type="boolean" default=false;
-	param name="args.clickableRows"       type="boolean" default=true;
-	param name="args.compact"             type="boolean" default=false;
-	param name="args.batchEditableFields" type="array"   default=[];
-	param name="args.datasourceUrl"       type="string"  default=event.buildAdminLink( objectName=args.objectName, operation="ajaxListing", args={ useMultiActions=args.useMultiActions, gridFields=ListAppend( ArrayToList( args.gridFields ), ArrayToList( args.hiddenGridFields ) ), isMultilingual=args.isMultilingual, draftsEnabled=args.draftsEnabled, noActions=args.noActions } );
-	param name="args.exportFilterString"  type="string"  default="";
-	param name="args.dataExportUrl"       type="string"  default=event.buildAdminLink( objectName=args.objectName, operation="exportDataAction"      );
-	param name="args.dataExportConfigUrl" type="string"  default=event.buildAdminLink( objectName=args.objectName, operation="dataExportConfigModal" );
-	param name="args.saveExportUrl"       type="string"  default=event.buildAdminLink( objectName=args.objectName, operation="saveExportAction"      );
-	param name="args.noRecordMessage"     type="string"  default=translateResource( uri="cms:datatables.emptyTable" );
-	param name="args.objectTitlePlural"   type="string"  default=translateObjectName( objectName=args.objectName, plural=true );
+	param name="args.objectName"                  type="string";
+	param name="args.multiActions"                type="string"  default="";
+	param name="args.useMultiActions"             type="boolean" default=false;
+	param name="args.multiActionViewlet"          type="string"  default="admin.datamanager._multiActions";
+	param name="args.multiActionUrl"              type="string"  default="";
+	param name="args.isMultilingual"              type="boolean" default=false;
+	param name="args.draftsEnabled"               type="boolean" default=false;
+	param name="args.noActions"                   type="boolean" default=false;
+	param name="args.footerEnabled"               type="boolean" default=false;
+	param name="args.gridFields"                  type="array";
+	param name="args.sortableFields"              type="array"   default=[];
+	param name="args.hiddenGridFields"            type="array"   default=[];
+	param name="args.filterContextData"           type="struct"  default={};
+	param name="args.allowSearch"                 type="boolean" default=true;
+	param name="args.allowFilter"                 type="boolean" default=true;
+	param name="args.allowDataExport"             type="boolean" default=false;
+	param name="args.allowSaveExport"             type="boolean" default=true;
+	param name="args.clickableRows"               type="boolean" default=true;
+	param name="args.compact"                     type="boolean" default=false;
+	param name="args.batchEditableFields"         type="array"   default=[];
+	param name="args.datasourceUrl"               type="string"  default=event.buildAdminLink( objectName=args.objectName, operation="ajaxListing", args={ useMultiActions=args.useMultiActions, gridFields=ListAppend( ArrayToList( args.gridFields ), ArrayToList( args.hiddenGridFields ) ), isMultilingual=args.isMultilingual, draftsEnabled=args.draftsEnabled, noActions=args.noActions } );
+	param name="args.exportFilterString"          type="string"  default="";
+	param name="args.dataExportUrl"               type="string"  default=event.buildAdminLink( objectName=args.objectName, operation="exportDataAction"      );
+	param name="args.customExportUrl"             type="string"  default="";
+	param name="args.dataExportConfigUrl"         type="string"  default=event.buildAdminLink( objectName=args.objectName, operation="dataExportConfigModal" );
+	param name="args.saveExportUrl"               type="string"  default=event.buildAdminLink( objectName=args.objectName, operation="saveExportAction"      );
+	param name="args.objectTitlePlural"           type="string"  default=translateObjectName( objectName=args.objectName, plural=true );
 	param name="args.excludeFilterExpressionTags" type="string"  default="";
+	param name="args.noRecordMessage"             type="string"  default=translateResource( uri="cms:datatables.emptyTable" );
+	param name="args.noRecordTableHide"           type="boolean" default=false;
+	param name="args.noRecordTableHideMessage"    type="string"  default="";
 
 	deleteSelected       = translateResource( uri="cms:datamanager.deleteSelected.title" );
 	deleteSelectedPrompt = translateResource( uri="cms:datamanager.deleteSelected.prompt", data=[ args.objectTitlePlural ] );
@@ -33,8 +37,12 @@
 
 	event.include( "/js/admin/specific/datamanager/object/");
 	event.include( "/css/admin/specific/datamanager/object/");
+	event.includeData( {
+		  defaultPageLength = args.defaultPageLength ?: getSetting( name="datamanager.defaults.datatable.defaultPageLength", defaultValue=10 )
+		, paginationOptions = args.paginationOptions ?: getSetting( name="datamanager.defaults.datatable.paginationOptions", defaultValue=[ 5, 10, 25, 50, 100 ] )
+	} );
 
-	instanceId = LCase( Hash( serializeJSON( args.filterContextData ) & CallStackGet( "string" ) ) );
+	instanceId = LCase( Hash( serializeJSON( args.filterContextData ) & CallStackGet( "string" ) & args.datasourceUrl ) );
 	tableId = args.id ?: "object-listing-table-#LCase( args.objectName )#-#instanceId#";
 
 	args.allowFilter  = IsTrue( args.allowFilter ?: "" );
@@ -55,7 +63,7 @@
 	}
 
 	allowDataExport  = args.allowDataExport && isFeatureEnabled( "dataexport" );
-	allowSaveExport  = allowDataExport && isFeatureEnabled( "dataexport" );
+	allowSaveExport  = args.allowSaveExport && allowDataExport;
 	savedExportCount = Val( args.savedExportCount ?: "" );
 	savedExportsLink = args.savedExportsLink ?: "";
 
@@ -134,17 +142,27 @@
 		<cfif allowDataExport>
 			<div class="object-listing-table-export hide">
 				<div class="pull-left">
-					<cfif savedExportCount>
-						<a href="#savedExportsLink#">
-							<i class="fa fa-fw fa-save"></i>
-							#translateResource( uri="cms:savedexports.for.object.link", data=[ NumberFormat( savedExportCount ) ] )#
+					<cfif !isEmptyString( args.customExportUrl )>
+						<a class="btn btn-info btn-sm" href="#args.customExportUrl#">
+							<i class="fa fa-fw fa-download"></i>
+							#translateResource(
+								  uri          = "preside-objects.#args.objectName#:datatable.custom.export.btn"
+								, defaultValue = translateResource( uri="cms:datatable.custom.export.btn" )
+							)#
+						</a>
+					<cfelse>
+						<cfif savedExportCount>
+							<a href="#savedExportsLink#">
+								<i class="fa fa-fw fa-save"></i>
+								#translateResource( uri="cms:savedexports.for.object.link", data=[ NumberFormat( savedExportCount ) ] )#
+							</a>
+						</cfif>
+						&nbsp;
+						<a class="btn btn-info btn-sm object-listing-data-export-button" href="#args.dataExportConfigUrl#">
+							<i class="fa fa-fw fa-download"></i>
+							#translateResource( "cms:datatable.export.btn" )#
 						</a>
 					</cfif>
-					&nbsp;
-					<a class="btn btn-info btn-sm object-listing-data-export-button" href="#args.dataExportConfigUrl#">
-						<i class="fa fa-fw fa-download"></i>
-						#translateResource( "cms:datatable.export.btn" )#
-					</a>
 				</div>
 			</div>
 		</cfif>
@@ -164,6 +182,8 @@
 		    data-allow-filter="#args.allowFilter#"
 		    data-compact="#args.compact#"
 		    data-no-record-message="#args.noRecordMessage#"
+		    data-no-record-table-hide="#args.noRecordTableHide#"
+		    data-no-record-table-hide-message="#EncodeForHTML( args.noRecordTableHideMessage )#"
 		>
 			<thead>
 				<tr>
