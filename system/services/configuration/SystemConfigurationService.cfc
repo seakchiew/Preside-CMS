@@ -362,6 +362,7 @@ component displayName="System configuration service" {
 			, regex      = true
 			, async      = false
 		);
+
 		$announceInterception( "onClearSettingsCache", arguments );
 	}
 

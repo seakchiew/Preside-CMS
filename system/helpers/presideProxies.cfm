@@ -250,6 +250,16 @@
 		<cfreturn getController().getWireBox().getInstance( "errorLogService" ).raiseError( argumentCollection=arguments ) />
 	</cffunction>
 
+<!--- system alerts --->
+	<cffunction name="runSystemAlertCheck" access="public" returntype="any" output="false">
+		<cfargument name="type"      type="string"  required="true" />
+		<cfargument name="reference" type="string"  default="" />
+		<cfargument name="async"     type="boolean" default="true" />
+		<cfargument name="trigger"   type="string"  default="code" />
+
+		<cfreturn getController().getWireBox().getInstance( "systemAlertsService" ).runCheck( argumentCollection=arguments ) />
+	</cffunction>
+
 <!--- tasks --->
 	<cffunction name="createTask" access="public" returntype="any" output="false">
 		<cfreturn getSingleton( "adHocTaskManagerService" ).createTask( argumentCollection=arguments ) />

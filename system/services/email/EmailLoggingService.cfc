@@ -106,17 +106,24 @@ component {
 	/**
 	 * Marks the given email as sent
 	 *
-	 * @autodoc true
-	 * @id.hint ID of the email to mark as sent
+	 * @autodoc         true
+	 * @id.hint         ID of the email to mark as sent
+	 * @templateId.hint ID of the email template
 	 *
 	 */
-	public void function markAsSent( required string id ) {
+	public void function markAsSent(
+		  required string id
+		,          string templateId = ""
+	) {
+		var now     = _getNow();
 		var updated = $getPresideObject( "email_template_send_log" ).updateData( id=arguments.id, data={
 			  sent      = true
-			, sent_date = _getNow()
+			, sent_date = now
 		} );
 
 		if ( updated ) {
+			_getEmailTemplateService().updateLastSentDate( templateId=arguments.templateId, lastSentDate=now );
+
 			recordActivity(
 				  messageId = arguments.id
 				, activity  = "send"
@@ -699,6 +706,21 @@ component {
 			}
 		}
 
+		// Check domain against allowed domains setting
+		var allowedDomains = _getDomainAllowlist();
+		var domainRegex     = "";
+		for( var allowedDomain in allowedDomains ) {
+			if ( domain == allowedDomain ) {
+				return true;
+			}
+			if ( Left( allowedDomain, 1 ) == "*" ) {
+				domainRegex = replace( allowedDomain, "*", "" ) & "$";
+				if ( reFindNoCase( domainRegex, domain ) ) {
+					return true;
+				}
+			}
+		}
+
 		// is the link in our link table
 		var linkExists =  $getPresideObject( "link" ).dataExists( filter="type = :type and external_address like :external_address", filterParams={
 			  type             = "url"
@@ -806,6 +828,12 @@ component {
 			_lib = DirectoryList( libDir, false, "path", "*.jar" );
 		}
 		return _lib;
+	}
+
+	private array function _getDomainAllowlist() {
+		var allowList = $getPresideSetting( "email", "link_checking_allowlist" );
+
+		return ListToArray( Trim( allowList ), " #chr(9)##chr(10)##chr(13)#" );
 	}
 
 // GETTERS AND SETTERS

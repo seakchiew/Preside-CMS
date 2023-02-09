@@ -147,7 +147,7 @@ component {
 			{ class="preside.system.interceptors.AdminLayoutInterceptor"              , properties={} },
 			{ class="preside.system.interceptors.WebsiteUserImpersonationInterceptor" , properties={} },
 			{ class="preside.system.interceptors.ScheduledExportDownloadInterceptor"  , properties={} },
-			{ class="preside.system.interceptors.FormBuilderInterceptor"              , properties={} }
+			{ class="preside.system.interceptors.FormBuilderInterceptor"              , properties={} },
 		];
 
 		variables.interceptorSettings = {
@@ -754,6 +754,7 @@ component {
 		// admin applications with the 'site' feature disabled
 		settings.forceSsl       = IsBoolean( settings.env.forceSsl ?: "" ) && settings.env.forceSsl;
 		settings.allowedDomains = ListToArray( LCase( settings.env.allowedDomains  ?: "" ) );
+		settings.defaultSiteProtocol = settings.defaultSiteProtocol ?: ( settings.env.DEFAULT_SITE_PROTOCOL ?: _getCurrentProtocol() );
 	}
 
 	private void function __setupAssetManager() {
@@ -842,54 +843,58 @@ component {
 
 	private void function __setupFeatures() {
 		settings.features = {
-			  cms                      = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, sitetree                 = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, sites                    = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, assetManager             = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, websiteUsers             = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, websiteBenefits          = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, datamanager              = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, batchOperationSelectAll  = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, useDistinctForDatatables = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, systemConfiguration      = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, cmsUserManager           = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, errorLogs                = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, redirectErrorPages       = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
-			, auditTrail               = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, systemInformation        = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, passwordPolicyManager    = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, formbuilder              = { enabled=true , siteTemplates=[ "*" ], widgets=[ "formbuilderform" ] }
-			, formbuilder2             = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
-			, multilingual             = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
-			, dataexport               = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
-			, twoFactorAuthentication  = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, rulesEngine              = { enabled=true , siteTemplates=[ "*" ], widgets=[ "conditionalContent" ] }
-			, emailCenter              = { enabled=true , siteTemplates=[ "*" ] }
-			, emailCenterResend        = { enabled=false, siteTemplates=[ "*" ] }
-			, emailStyleInliner        = { enabled=true , siteTemplates=[ "*" ] }
-			, emailLinkShortener       = { enabled=true , siteTemplates=[ "*" ] }
-			, emailOverwriteDomain     = { enabled=false, siteTemplates=[ "*" ] }
-			, customEmailTemplates     = { enabled=true , siteTemplates=[ "*" ] }
-			, apiManager               = { enabled=false, siteTemplates=[ "*" ] }
-			, restTokenAuth            = { enabled=false, siteTemplates=[ "*" ] }
-			, adminCsrfProtection      = { enabled=true , siteTemplates=[ "*" ] }
-			, fullPageCaching          = { enabled=false, siteTemplates=[ "*" ] }
+			  cms                             = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, sitetree                        = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, sites                           = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, assetManager                    = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, websiteUsers                    = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, websiteBenefits                 = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, datamanager                     = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, batchOperationSelectAll         = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, useDistinctForDatatables        = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, systemConfiguration             = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, cmsUserManager                  = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, errorLogs                       = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, redirectErrorPages              = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
+			, auditTrail                      = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, systemInformation               = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, passwordPolicyManager           = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, formbuilder                     = { enabled=true , siteTemplates=[ "*" ], widgets=[ "formbuilderform" ] }
+			, formbuilder2                    = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
+			, multilingual                    = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
+			, dataexport                      = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
+			, dataExporterNDJSON              = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
+			, twoFactorAuthentication         = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, rulesEngine                     = { enabled=true , siteTemplates=[ "*" ], widgets=[ "conditionalContent" ] }
+			, emailCenter                     = { enabled=true , siteTemplates=[ "*" ] }
+			, emailCenterResend               = { enabled=false, siteTemplates=[ "*" ] }
+			, emailStyleInliner               = { enabled=true , siteTemplates=[ "*" ] }
+			, emailLinkShortener              = { enabled=true , siteTemplates=[ "*" ] }
+			, emailOverwriteDomain            = { enabled=false, siteTemplates=[ "*" ] }
+			, customEmailTemplates            = { enabled=true , siteTemplates=[ "*" ] }
+			, apiManager                      = { enabled=false, siteTemplates=[ "*" ] }
+			, restTokenAuth                   = { enabled=false, siteTemplates=[ "*" ] }
+			, adminCsrfProtection             = { enabled=true , siteTemplates=[ "*" ] }
+			, fullPageCaching                 = { enabled=false, siteTemplates=[ "*" ] }
 			, fullPageCachingForLoggedInUsers = { enabled=false, siteTemplates=[ "*" ] }
-			, healthchecks             = { enabled=true , siteTemplates=[ "*" ] }
-			, emailQueueHeartBeat      = { enabled=true , siteTemplates=[ "*" ] }
-			, adhocTaskHeartBeat       = { enabled=true , siteTemplates=[ "*" ] }
-			, taskmanagerHeartBeat     = { enabled=true , siteTemplates=[ "*" ] }
-			, scheduledExportHeartBeat = { enabled=true , siteTemplates=[ "*" ] }
-			, assetQueueHeartBeat      = { enabled=true , siteTemplates=[ "*" ] }
-			, assetQueue               = { enabled=false , siteTemplates=[ "*" ] }
-			, queryCachePerObject      = { enabled=false, siteTemplates=[ "*" ] }
-			, sslInternalHttpCalls     = { enabled=_luceeGreaterThanFour(), siteTemplates=[ "*" ] }
-			, sslInternalHttpCalls     = { enabled=_luceeGreaterThanFour(), siteTemplates=[ "*" ] }
-			, presideSessionManagement = { enabled=_usePresideSessionManagement(), siteTemplates=[ "*" ] }
-			, "devtools.reload"        = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, "devtools.cache"         = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, "devtools.extension"     = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, "devtools.new"           = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
+			, healthchecks                    = { enabled=true , siteTemplates=[ "*" ] }
+			, emailQueueHeartBeat             = { enabled=true , siteTemplates=[ "*" ] }
+			, adhocTaskHeartBeat              = { enabled=true , siteTemplates=[ "*" ] }
+			, taskmanagerHeartBeat            = { enabled=true , siteTemplates=[ "*" ] }
+			, systemAlertsHeartBeat           = { enabled=true , siteTemplates=[ "*" ] }
+			, scheduledExportHeartBeat        = { enabled=true , siteTemplates=[ "*" ] }
+			, segmentationFiltersHeartbeat    = { enabled=true , siteTemplates=[ "*" ] }
+			, assetQueueHeartBeat             = { enabled=true , siteTemplates=[ "*" ] }
+			, assetQueue                      = { enabled=false , siteTemplates=[ "*" ] }
+			, queryCachePerObject             = { enabled=false, siteTemplates=[ "*" ] }
+			, sslInternalHttpCalls            = { enabled=_luceeGreaterThanFour(), siteTemplates=[ "*" ] }
+			, sslInternalHttpCalls            = { enabled=_luceeGreaterThanFour(), siteTemplates=[ "*" ] }
+			, presideSessionManagement        = { enabled=_usePresideSessionManagement(), siteTemplates=[ "*" ] }
+			, "devtools.reload"               = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, "devtools.cache"                = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, "devtools.extension"            = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, "devtools.new"                  = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
+			, passwordVisibilityToggle        = { enabled=true , siteTemplates=[ "*" ] }
 		};
 	}
 
@@ -910,6 +915,7 @@ component {
 		settings.enum.emailSendingLimit           = [ "none", "once", "limited" ];
 		settings.enum.emailSendQueueStatus        = [ "queued", "sending" ];
 		settings.enum.timeUnit                    = [ "second", "minute", "hour", "day", "week", "month", "quarter", "year" ];
+		settings.enum.segmentationFilterTimeUnit  = [ "hour", "day" ];
 		settings.enum.emailSendingScheduleType    = [ "fixeddate", "repeat" ];
 		settings.enum.emailActivityType           = [ "send", "deliver", "open", "click", "markasspam", "unsubscribe", "fail" ];
 		settings.enum.urlStringPart               = [ "url", "domain", "path", "querystring", "protocol" ];
@@ -920,6 +926,7 @@ component {
 		settings.enum.rulesfilterScopeGroup       = [ "global", "group" ];
 		settings.enum.rulesEngineConditionType    = [ "condition", "filter" ];
 		settings.enum.dataExportExcelDataTypes    = [ "mapped", "string" ];
+		settings.enum.systemAlertLevel            = [ "critical", "warning", "advisory" ];
 	}
 
 	private void function __setupFormValidationProviders() {
@@ -1012,12 +1019,14 @@ component {
 			, healthCheck     = {}
 			, adhocTask       = {}
 			, taskmanager     = {}
+			, systemAlerts    = {}
 			, emailQueue      = {}
 		};
 
 		settings.heartbeats.assetQueue.hostname   = settings.env.ASSETQUEUE_HEARTBEAT_HOSTNAME   ?: settings.heartbeats.defaultHostname;
 		settings.heartbeats.adhocTask.hostname    = settings.env.ADHOCTASK_HEARTBEAT_HOSTNAME    ?: settings.heartbeats.defaultHostname;
 		settings.heartbeats.taskmanager.hostname  = settings.env.TASKMANAGER_HEARTBEAT_HOSTNAME  ?: settings.heartbeats.defaultHostname;
+		settings.heartbeats.systemAlerts.hostname = settings.env.SYSTEMALERTS_HEARTBEAT_HOSTNAME ?: settings.heartbeats.defaultHostname;
 		settings.heartbeats.emailQueue.hostname   = settings.env.EMAILQUEUE_HEARTBEAT_HOSTNAME   ?: settings.heartbeats.defaultHostname;
 		settings.heartbeats.cacheBoxReap.hostname = settings.env.CACHEBOXREAP_HEARTBEAT_HOSTNAME ?: settings.heartbeats.defaultHostname;
 		settings.heartbeats.healthCheck.hostname  = settings.env.HEALTHCHECK_HEARTBEAT_HOSTNAME  ?: settings.heartbeats.defaultHostname;
@@ -1274,6 +1283,7 @@ component {
 		fbSettings.itemTypes.content = { sortorder=40, types={
 			  spacer  = { isFormField=false }
 			, content = { isFormField=false }
+			, section = { isFormField=false }
 		} };
 
 		fbSettings.actions = [
@@ -1412,5 +1422,29 @@ component {
 		var applicationSettings = getApplicationSettings();
 
 		return IsBoolean( applicationSettings.presideSessionManagement ?: "" ) && applicationSettings.presideSessionManagement;
+	}
+
+	/**
+	 * returns protocol based just like isSSL() in
+	 * system.externals.coldbox.system.web.context.RequestContext.cfc
+	 */
+	private string function _getCurrentProtocol() {
+		if( isBoolean( cgi.server_port_secure ) && cgi.server_port_secure ){
+			return "https";
+		}
+		if( StructKeyExists( cgi, "https" ) && cgi.https == "on" ){
+			return "https";
+		}
+
+		var headers = getHttpRequestData( false ).headers;
+
+		if( ( headers[ "x-forwarded-proto" ] ?: "" ) == "https" ){
+			return "https";
+		}
+		if( ( headers[ "x-scheme" ] ?: "" ) == "https" ){
+			return "https";
+		}
+
+		return "http";
 	}
 }

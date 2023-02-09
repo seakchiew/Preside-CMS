@@ -710,7 +710,7 @@ component {
 		var coreLayoutViewlet = "formbuilder.core.formLayout";
 		var formLayoutArgs    = Duplicate( arguments.configuration );
 		var formLayoutViewlet = _getFormBuilderRenderingService().getFormLayoutViewlet( layout=arguments.layout );
-		var idPrefixForFields = _createIdPrefix();
+		var idPrefixForFields = _createIdPrefix( formId=arguments.formId );
 
 		for( var item in items ) {
 			var config    = Duplicate( item.configuration );
@@ -1192,16 +1192,10 @@ component {
 		}
 
 		if ( Len( Trim( arguments.savedFilterExpIdLists ?: "" ) ) ) {
-			var savedFilters = _getPresideObjectService().selectData(
-				  objectName   = "rules_engine_condition"
-				, selectFields = [ "expressions" ]
-				, filter       = { id=ListToArray( arguments.savedFilterExpIdLists ?: "" ) }
-			);
-
-			for( var filter in savedFilters ) {
+			for( var filterId in ListToArray( arguments.savedFilterExpIdLists ) ) {
 				extraFilters.append( _getRulesEngineFilterService().prepareFilter(
-					  objectName      = 'formbuilder_formsubmission'
-					, expressionArray = DeSerializeJson( filter.expressions )
+					  objectName = 'formbuilder_formsubmission'
+					, filterId   = filterId
 				) );
 			}
 		}
@@ -1413,16 +1407,10 @@ component {
 		}
 
 		if ( Len( Trim( arguments.savedFilterExpIdLists ?: "" ) ) ) {
-			var savedFilters = _getPresideObjectService().selectData(
-				  objectName   = "rules_engine_condition"
-				, selectFields = [ "expressions" ]
-				, filter       = { id=ListToArray( arguments.savedFilterExpIdLists ?: "" ) }
-			);
-
-			for( var filter in savedFilters ) {
+			for( var filterId in ListToArray( arguments.savedFilterExpIdLists ) ) {
 				extraFilters.append( _getRulesEngineFilterService().prepareFilter(
-					  objectName      = 'formbuilder_formsubmission'
-					, expressionArray = DeSerializeJson( filter.expressions )
+					  objectName = 'formbuilder_formsubmission'
+					, filterId   = filterId
 				) );
 			}
 		}
@@ -2180,8 +2168,8 @@ component {
 		return newFormId;
 	}
 
-	private string function _createIdPrefix() {
-		return "formbuilder_" & LCase( Hash( Now() ) );
+	private string function _createIdPrefix( required string formId ) {
+		return "formbuilder_" & LCase( Hash( Now() & arguments.formId ) );
 	}
 
 	private struct function _getItemConfigurationForV2Question( required string questionId ) {
@@ -2290,16 +2278,10 @@ component {
 	) {
 		var extraFilters = [];
 		if ( Len( Trim( arguments.savedFilters ?: "" ) ) ) {
-			var savedFilters = _getPresideObjectService().selectData(
-				  objectName   = "rules_engine_condition"
-				, selectFields = [ "expressions" ]
-				, filter       = { id=ListToArray( arguments.savedFilters ?: "" ) }
-			);
-
-			for( var filter in savedFilters ) {
+			for( var filterId in ListToArray( arguments.savedFilters ) ) {
 				extraFilters.append( _getRulesEngineFilterService().prepareFilter(
-					  objectName      = 'formbuilder_formsubmission'
-					, expressionArray = DeSerializeJson( filter.expressions )
+					  objectName = 'formbuilder_formsubmission'
+					, filterId   = filterId
 				) );
 			}
 		}
