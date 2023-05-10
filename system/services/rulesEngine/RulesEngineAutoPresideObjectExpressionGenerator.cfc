@@ -171,11 +171,21 @@ component {
 				if ( !arrayContainsNoCase( excludedKeys, "OneToManyHas" ) ) {
 					arrayAppend( expressions, _createOneToManyHasExpression( objectName, propertyDefinition, parentObjectName, parentPropertyName ) );
 				}
+				if ( reFind( "^\_translation\_", relatedTo ) ) {
+					arrayAppend( expressions, _createOutdatedTranslationExpression( objectName, propertyDefinition, parentObjectName, parentPropertyName ) );
+					arrayAppend( expressions, _createTranslationExistsExpression( objectName, propertyDefinition, parentObjectName, parentPropertyName ) );
+				}
 			break;
 		}
 
-		if ( Len( Trim( propertyDefinition.enum ?: "" ) ) && !arrayContainsNoCase( excludedKeys, "EnumPropertyMatches" ) ) {
-			arrayAppend( expressions, _createEnumMatchesExpression( objectName, propertyDefinition.name, propertyDefinition.enum, parentObjectName, parentPropertyName ) );
+		if ( Len( Trim( propertyDefinition.enum ?: "" ) ) ) {
+			if ( isFormula ) {
+				if ( !arrayContainsNoCase( excludedKeys, "EnumFormulaPropertyMatches" ) ) {
+					arrayAppend( expressions, _createEnumFormulaMatchesExpression( objectName, propertyDefinition.name, propertyDefinition.enum, parentObjectName, parentPropertyName ) );
+				}
+			} else if ( !arrayContainsNoCase( excludedKeys, "EnumPropertyMatches" ) ) {
+				arrayAppend( expressions, _createEnumMatchesExpression( objectName, propertyDefinition.name, propertyDefinition.enum, parentObjectName, parentPropertyName ) );
+			}
 		}
 
 
@@ -261,6 +271,21 @@ component {
 			, filterHandler     = "rules.dynamic.presideObjectExpressions.EnumPropertyMatches.prepareFilters"
 			, labelHandler      = "rules.dynamic.presideObjectExpressions.EnumPropertyMatches.getLabel"
 			, textHandler       = "rules.dynamic.presideObjectExpressions.EnumPropertyMatches.getText"
+		} );
+
+		return expression;
+	}
+
+	private struct function _createEnumFormulaMatchesExpression( required string objectName, required string propertyName, required string enum, required string parentObjectName, required string parentPropertyName  ) {
+		var expression  = _getCommonExpressionDefinition( argumentCollection=arguments );
+
+		expression.append( {
+			  id                = "presideobject_enumFormulaMatches_#arguments.parentObjectname##arguments.parentPropertyName##arguments.objectName#.#arguments.propertyName#"
+			, fields            = { _is={ fieldType="boolean", variety="isIsNot", required=false, default=true }, enumValue={ fieldType="enum", enum=arguments.enum, required=false, default="", defaultLabel="rules.dynamicExpressions:enumFormulaPropertyMatches.enumValue.default.label" } }
+			, expressionHandler = "rules.dynamic.presideObjectExpressions.EnumFormulaPropertyMatches.evaluateExpression"
+			, filterHandler     = "rules.dynamic.presideObjectExpressions.EnumFormulaPropertyMatches.prepareFilters"
+			, labelHandler      = "rules.dynamic.presideObjectExpressions.EnumFormulaPropertyMatches.getLabel"
+			, textHandler       = "rules.dynamic.presideObjectExpressions.EnumFormulaPropertyMatches.getText"
 		} );
 
 		return expression;
@@ -596,6 +621,60 @@ component {
 			, filterHandler     = "rules.dynamic.presideObjectExpressions.OneToManyHas.prepareFilters"
 			, labelHandler      = "rules.dynamic.presideObjectExpressions.OneToManyHas.getLabel"
 			, textHandler       = "rules.dynamic.presideObjectExpressions.OneToManyHas.getText"
+		} );
+
+		expression.fields.value.append( arguments.propertyDefinition, false );
+
+		expression.expressionHandlerArgs.relatedTo       = propertyDefinition.relatedTo;
+		expression.filterHandlerArgs.relatedTo           = propertyDefinition.relatedTo;
+		expression.labelHandlerArgs.relatedTo            = propertyDefinition.relatedTo;
+		expression.textHandlerArgs.relatedTo             = propertyDefinition.relatedTo;
+		expression.expressionHandlerArgs.relationshipKey = ( propertyDefinition.relationshipKey ?: arguments.objectName );
+		expression.filterHandlerArgs.relationshipKey     = ( propertyDefinition.relationshipKey ?: arguments.objectName );
+		expression.labelHandlerArgs.relationshipKey      = ( propertyDefinition.relationshipKey ?: arguments.objectName );
+		expression.textHandlerArgs.relationshipKey       = ( propertyDefinition.relationshipKey ?: arguments.objectName );
+
+		return expression;
+	}
+
+	private struct function _createOutdatedTranslationExpression( required string objectName, required struct propertyDefinition, required string parentObjectName, required string parentPropertyName  ) {
+		var expression       = _getCommonExpressionDefinition( argumentCollection=arguments, propertyName=propertyDefinition.name );
+		var possessesVariety = _getBooleanVariety( arguments.objectName, arguments.propertyDefinition.name, "possesses" );
+
+		expression.append( {
+			  id                = "presideobject_outdatedtranslation_#arguments.parentObjectName##arguments.parentPropertyName##arguments.objectName#.#arguments.propertyDefinition.name#"
+			, fields            = { _possesses={ fieldType="boolean", variety=possessesVariety, required=false, default=true }, value={ fieldType="object", object="multilingual_language", multiple=true, required=true, default="", defaultLabel="rules.dynamicExpressions:outdatedTranslation.value.default.label" } }
+			, expressionHandler = "rules.dynamic.presideObjectExpressions.OutdatedTranslation.evaluateExpression"
+			, filterHandler     = "rules.dynamic.presideObjectExpressions.OutdatedTranslation.prepareFilters"
+			, labelHandler      = "rules.dynamic.presideObjectExpressions.OutdatedTranslation.getLabel"
+			, textHandler       = "rules.dynamic.presideObjectExpressions.OutdatedTranslation.getText"
+		} );
+
+		expression.fields.value.append( arguments.propertyDefinition, false );
+
+		expression.expressionHandlerArgs.relatedTo       = propertyDefinition.relatedTo;
+		expression.filterHandlerArgs.relatedTo           = propertyDefinition.relatedTo;
+		expression.labelHandlerArgs.relatedTo            = propertyDefinition.relatedTo;
+		expression.textHandlerArgs.relatedTo             = propertyDefinition.relatedTo;
+		expression.expressionHandlerArgs.relationshipKey = ( propertyDefinition.relationshipKey ?: arguments.objectName );
+		expression.filterHandlerArgs.relationshipKey     = ( propertyDefinition.relationshipKey ?: arguments.objectName );
+		expression.labelHandlerArgs.relationshipKey      = ( propertyDefinition.relationshipKey ?: arguments.objectName );
+		expression.textHandlerArgs.relationshipKey       = ( propertyDefinition.relationshipKey ?: arguments.objectName );
+
+		return expression;
+	}
+
+	private struct function _createTranslationExistsExpression( required string objectName, required struct propertyDefinition, required string parentObjectName, required string parentPropertyName  ) {
+		var expression       = _getCommonExpressionDefinition( argumentCollection=arguments, propertyName=propertyDefinition.name );
+		var possessesVariety = _getBooleanVariety( arguments.objectName, arguments.propertyDefinition.name, "possesses" );
+
+		expression.append( {
+			  id                = "presideobject_translationexists_#arguments.parentObjectName##arguments.parentPropertyName##arguments.objectName#.#arguments.propertyDefinition.name#"
+			, fields            = { _possesses={ fieldType="boolean", variety=possessesVariety, required=false, default=true }, value={ fieldType="object", object="multilingual_language", multiple=true, required=true, default="", defaultLabel="rules.dynamicExpressions:TranslationExists.value.default.label" }, savedFilter={ fieldType="filter", object=propertyDefinition.relatedTo, multiple=false, quickadd=true, quickedit=true, required=false, default="", defaultLabel="rules.dynamicExpressions:TranslationExists.savedFilter.default.label" } }
+			, expressionHandler = "rules.dynamic.presideObjectExpressions.TranslationExists.evaluateExpression"
+			, filterHandler     = "rules.dynamic.presideObjectExpressions.TranslationExists.prepareFilters"
+			, labelHandler      = "rules.dynamic.presideObjectExpressions.TranslationExists.getLabel"
+			, textHandler       = "rules.dynamic.presideObjectExpressions.TranslationExists.getText"
 		} );
 
 		expression.fields.value.append( arguments.propertyDefinition, false );

@@ -200,7 +200,7 @@ component displayName="Preside Object Service" {
 		,          array   bypassTenants           = []
 		,          array   ignoreDefaultFilters    = []
 	) autodoc=true {
-		var args = _addDefaultFilters( _cleanupPropertyAliases( argumentCollection=Duplicate( arguments ) ) );
+		var args = _addDefaultFilters( _cleanupPropertyAliases( argumentCollection=_deepishDuplicate( arguments ) ) );
 		var interceptorResult = _announceInterception( "preSelectObjectData", args );
 		if ( IsBoolean( interceptorResult.abort ?: "" ) && interceptorResult.abort ) {
 			return IsQuery( interceptorResult.returnValue ?: "" ) ? interceptorResult.returnValue : QueryNew('');
@@ -231,6 +231,9 @@ component displayName="Preside Object Service" {
 
 		args.selectFields   = expandHavingClauses( argumentCollection=args );
 		args.selectFields   = parseSelectFields( argumentCollection=args );
+		if ( args.recordCountOnly ) {
+			args.selectFields = simplifySelectFieldsForRecordCount( argumentCollection=args );
+		}
 		args.preparedFilter = _prepareFilter(
 			  argumentCollection = args
 			, adapter            = adapter
@@ -242,7 +245,7 @@ component displayName="Preside Object Service" {
 		args.orderBy     = arguments.recordCountOnly ? "" : _parseOrderBy( args.orderBy, args.objectName, args.adapter );
 		args.groupBy     = _autoPrefixBareProperty( args.objectName, args.groupBy, args.adapter );
 		if ( !Len( Trim( args.groupBy ) ) && args.autoGroupBy ) {
-			args.groupBy = _autoCalculateGroupBy( args.selectFields );
+			args.groupBy = _autoCalculateGroupBy( args.selectFields, args.objectName, args.adapter );
 		}
 
 		args.joinTargets = _extractForeignObjectsFromArguments( argumentCollection=args );
@@ -459,7 +462,7 @@ component displayName="Preside Object Service" {
 			return interceptorResult.returnValue ?: "";
 		}
 
-		var args               = _cleanupPropertyAliases( argumentCollection=Duplicate( arguments ) );
+		var args               = _cleanupPropertyAliases( argumentCollection=_deepishDuplicate( arguments ) );
 		var obj                = _getObject( args.objectName ).meta;
 		var adapter            = _getAdapter( obj.dsn );
 		var dateCreatedField   = getDateCreatedField( args.objectName );
@@ -1012,7 +1015,7 @@ component displayName="Preside Object Service" {
 			return Val( interceptorResult.returnValue ?: 0 );
 		}
 
-		var args           = _cleanupPropertyAliases( argumentCollection=Duplicate( arguments ) );
+		var args           = _cleanupPropertyAliases( argumentCollection=_deepishDuplicate( arguments ) );
 		var obj            = _getObject( args.objectName ).meta;
 		var adapter        = _getAdapter( obj.dsn );
 		var sql            = "";
@@ -1125,7 +1128,7 @@ component displayName="Preside Object Service" {
 
 		var relatedTo      = getObjectPropertyAttribute( arguments.objectName, arguments.propertyName, "relatedTo", "" );
 		var obj            = _getObject( relatedTo );
-		var selectDataArgs = Duplicate( arguments );
+		var selectDataArgs = _deepishDuplicate( arguments );
 
 		StructDelete( selectDataArgs, "propertyName" );
 		selectDataArgs.forceJoins = "inner"; // many-to-many joins are not required so "left" by default. Here we absolutely want inner joins.
@@ -2342,6 +2345,8 @@ component displayName="Preside Object Service" {
 					, dbAdapter    = adapter
 				);
 			}
+
+			fields[i] = _escapeAlias( fields[i], adapter );
 		}
 
 		arguments.selectFields = fields;
@@ -2360,6 +2365,24 @@ component displayName="Preside Object Service" {
 		_announceInterception( "postParseSelectFields", arguments );
 
 		return fields;
+	}
+
+	public array function simplifySelectFieldsForRecordCount(
+		  required string  objectName
+		, required array   selectFields
+		,          string  groupBy     = ""
+		,          boolean autoGroupBy = false
+	) {
+		if ( arguments.autoGroupBy && !Len( arguments.groupBy ) ) {
+			var aggregateRegex = "(group_concat|avg|corr|count|count|covar_pop|covar_samp|cume_dist|dense_rank|min|max|percent_rank|percentile_cont|percentile_disc|rank|regr_avgx|regr_avgy|regr_count|regr_intercept|regr_r2|regr_slope|regr_sxx|regr_sxy|regr_syy|stddev_pop|stddev_samp|sum|var_pop|var_sam)\s?\(";
+			for( var i=ArrayLen( arguments.selectFields ); i>0; i-- ) {
+				if ( ReFindNoCase( aggregateRegex, arguments.selectFields[ i ] ) ) {
+					ArrayDeleteAt( arguments.selectFields, i );
+				}
+			}
+		}
+
+		return arguments.selectFields;
 	}
 
 	public array function expandHavingClauses(
@@ -2968,7 +2991,7 @@ component displayName="Preside Object Service" {
 	}
 
 	private string function _removeDynamicElementsFromForeignObjectsCacheKey( required string cacheKey ) {
-		var staticCacheKey = arguments.cacheKey;
+		var staticCacheKey = _getSqlRunner().deObfuscateSql( arguments.cacheKey );
 
 		staticCacheKey = staticCacheKey.reReplaceNoCase( "[0-9a-f]{32}", "", "all" );
 		staticCacheKey = staticCacheKey.reReplaceNoCase( "[0-9a-f]{8}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{16}", "", "all" );
@@ -3303,7 +3326,7 @@ component displayName="Preside Object Service" {
 
 		compiledFilter = mergeFilters( compiledFilter, versionFilter, adapter, arguments.objectName );
 
-		var args = Duplicate( arguments );
+		var args = _deepishDuplicate( arguments );
 		args.append( {
 			  tableName     = versionTableName
 			, tableAlias    = arguments.objectName
@@ -3501,6 +3524,13 @@ component displayName="Preside Object Service" {
 		}
 
 		return true;
+	}
+
+	private string function _escapeAlias(
+		  required string text
+		, required any    dbAdapter
+	) {
+		return REReplaceNoCase( Trim( text ), '\bas\b\s+(\w+)(?!\s*[`\"\[])$', "as #dbAdapter.escapeEntity( "\1" )#" );
 	}
 
 	private string function _parseOrderBy( required string orderBy, required string objectName, required any dbAdapter ) {
@@ -3856,22 +3886,49 @@ component displayName="Preside Object Service" {
 		return dataExists( argumentCollection=arguments, extraFilters=draftCheckFilters );
 	}
 
-	private string function _autoCalculateGroupBy( required array selectFields ) {
-		var groupBy            = "";
+	private string function _autoCalculateGroupBy( required array selectFields, required string objectName, required any adapter ) {
+		var groupBy            = [];
 		var hasAggregateFields = false;
 		var aggregateRegex     = "(group_concat|avg|corr|count|count|covar_pop|covar_samp|cume_dist|dense_rank|min|max|percent_rank|percentile_cont|percentile_disc|rank|regr_avgx|regr_avgy|regr_count|regr_intercept|regr_r2|regr_slope|regr_sxx|regr_sxy|regr_syy|stddev_pop|stddev_samp|sum|var_pop|var_sam)\s?\(";
 
-
 		for( var field in selectFields ) {
-			var isAggregate = field.reFindNoCase( aggregateRegex );
-			hasAggregateFields = hasAggregateFields || isAggregate;
+			var isAggregate = ReFindNoCase( aggregateRegex, field );
 
-			if ( !isAggregate ) {
-				groupBy = groupBy.listAppend( field.reReplace( "^(.*?) as .*$", "\1" ) );
+			if ( isAggregate ) {
+				hasAggregateFields = true;
+			} else {
+				ArrayAppend( groupBy, ReReplaceNoCase( field, "^(.*?) as .*$", "\1" ) );
 			}
 		}
 
-		return hasAggregateFields ? groupBy : "";
+		if ( hasAggregateFields ) {
+			if ( arguments.adapter.supportsGroupBySingleField() ) {
+				var idField = getIdField( arguments.objectName );
+				if ( Len( idField ) ) {
+					var escapedField  = adapter.escapeEntity( idField );
+					var escapedObject = adapter.escapeEntity( arguments.objectName );
+
+					idFieldPatterns = [
+						  idField
+						, "#arguments.objectName#.#idField#"
+						, "#escapedField#"
+						, "#escapedObject#.#escapedField#"
+						, "#arguments.objectName#.#escapedField#"
+						, "#escapedObject#.#idField#"
+					];
+
+					for( var field in groupBy ) {
+						if ( ArrayFindNoCase( idFieldPatterns, field ) ) {
+							return field;
+						}
+					}
+				}
+			}
+
+			return ArrayToList( groupBy, ", " );
+		}
+
+		return "";
 	}
 
 	private boolean function _getUseCacheDefault( required string objectName ) {
@@ -3967,6 +4024,29 @@ component displayName="Preside Object Service" {
 				caches[ cacheName ].clearAll();
 			}
 		}
+	}
+
+	/**
+	 * throughout this service we need a "deep"
+	 * clone of arguments to be able to work
+	 * with them and change values with the new data.
+	 * However, we never expect objects as arguments
+	 * and do not want to deep clone those objects
+	 * which causes all sorts of memory usage problems.
+	 *
+	 */
+	private any function _deepishDuplicate( args ) {
+		var newArgs = {};
+
+		for( var key in arguments.args ) {
+			if ( IsSimpleValue( arguments.args[ key ] ) || IsObject( arguments.args[ key ] ) ) {
+				newArgs[ key ] = arguments.args[ key ];
+			} else {
+				newArgs[ key ] = Duplicate( arguments.args[ key ] );
+			}
+		}
+
+		return newArgs;
 	}
 
 

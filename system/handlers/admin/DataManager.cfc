@@ -203,6 +203,18 @@ component extends="preside.system.base.AdminHandler" {
 			args.actions.append( renderView( view="/admin/datamanager/_batchEditMultiActionButton", args=args ) );
 		}
 
+		args.batchCustomActions = customizationService.runCustomization(
+			  objectName = objectName
+			, action     = "getListingBatchActions"
+			, args       = args
+		);
+
+		announceInterception( "onGetListingBatchActions", args );
+
+		if ( isArray( args.batchCustomActions ?: "" ) && arrayLen( args.batchCustomActions ) ) {
+			arrayAppend( args.actions, renderView( view="/admin/datamanager/_batchCustomMultiActionButton", args=args ) );
+		}
+
 		if ( IsTrue( args.canDelete ?: ( prc.canDelete ?: "" ) ) && IsTrue( args.canBatchDelete ?: ( prc.canBatchDelete ?: "" ) ) ) {
 			var typeToConfirm = dataManagerService.useTypedConfirmationForBatchDeletion( objectName );
 			args.actions.append({
@@ -614,6 +626,14 @@ component extends="preside.system.base.AdminHandler" {
 					, batchSrcArgs       = batchSrcArgs
 				);
 			break;
+			default:
+				if ( getController().viewletExists( "admin.datamanager.#objectName#.#action#BatchAction" ) ) {
+					setNextEvent(
+						  url           = event.buildAdminLink( linkto="datamanager.#objectName#.#action#BatchAction" )
+						, persistStruct = { ids=ids, batchAll=batchAll, batchSrcArgs=batchSrcArgs }
+					);
+				}
+				break;
 		}
 
 		messageBox.error( translateResource( "cms:datamanager.invalid.multirecord.action.error" ) );
@@ -2729,7 +2749,7 @@ component extends="preside.system.base.AdminHandler" {
 			customizationService.runCustomization(
 				  objectName = object
 				, action     = "preQuickAddRecordAction"
-				, args       = {objectName = object,formData: formData}
+				, args       = {objectName = object,formData: formData,validationResult=validationResult}
 			);
 		}
 
@@ -3745,7 +3765,7 @@ component extends="preside.system.base.AdminHandler" {
 	private string function _cloneRecordForm( event, rc, prc, args={} ) {
 		var objectName      = args.objectName ?: "";
 		var recordId        = args.recordId   ?: "";
-		var cloneableFields = cloningService.listCloneableFields( objectName );
+		var cloneableFields = cloningService.listCloneableFields( objectName=objectName, ignoreIdField=false );
 
 		args.formName = _getDefaultCloneFormName( objectName );
 		args.cloneableData = {};

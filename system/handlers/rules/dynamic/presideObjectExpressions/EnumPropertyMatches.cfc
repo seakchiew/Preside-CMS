@@ -26,7 +26,7 @@ component extends="preside.system.base.AutoObjectExpressionHandler" {
 		,          boolean _is          = true
 		,          string  enumValue    = ""
 	){
-		var paramName = "textPropertyMatches" & CreateUUId().lCase().replace( "-", "", "all" );
+		var paramName = "enumPropertyMatches" & CreateUUId().lCase().replace( "-", "", "all" );
 		var filterSql = "#arguments.objectName#.#propertyName# ${operator} (:#paramName#)";
 		var params    = { "#paramName#" = { value=arguments.enumValue, type="cf_sql_varchar", list=true } };
 
