@@ -2,7 +2,8 @@
 <form i18nBaseUri="formbuilder.item-types.select:">
 	<tab id="default">
 		<fieldset id="default">
-			<field name="multiple"    control="yesnoswitch"             required="false" sortorder="32" />
+			<field name="multiple"           control="yesNoSwitch" required="false" sortorder="32" />
+			<field name="includeEmptyOption" control="yesNoSwitch" required="false" sortorder="33" />
 		</fieldset>
 	</tab>
 	<tab id="values">
@@ -10,6 +11,7 @@
 			<field name="datamanagerObject" control="dataManagerObjectPicker" required="false" sortorder="10" />
 			<field name="values"            control="textarea"                required="false" sortorder="20" defaultvalue="" />
 			<field name="labels"            control="textarea"                required="false" sortorder="30" defaultvalue="" />
+			<field name="defaultvalue"      control="textinput"               required="false" sortorder="40" defaultvalue="" />
 		</fieldset>
 	</tab>
 </form>

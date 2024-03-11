@@ -486,11 +486,17 @@ component extends="preside.system.base.AdminHandler" {
 				, args       = { objectName=objectName, recordId=recordId }
 			);
 		} else {
+			var eventArguments = { audit=true };
+
+			if ( structKeyExists( arguments, "formName" ) ) {
+				eventArguments.formName = arguments.formName;
+			}
+
 			runEvent(
 				  event          = "admin.DataManager._cloneRecordAction"
 				, prePostExempt  = true
 				, private        = true
-				, eventArguments = { audit=true }
+				, eventArguments = eventArguments
 			);
 		}
 	}
@@ -2109,6 +2115,19 @@ component extends="preside.system.base.AdminHandler" {
 			}
 		);
 
+		customizationService.runCustomization(
+			  objectName     = arguments.object
+			, action         = "postDecorateRecordsForGridListing"
+			, args           = {
+				  records         = records
+				, objectName      = arguments.object
+				, gridFields      = getRecordsArgs.gridFields
+				, useMultiActions = arguments.useMultiActions
+				, isMultilingual  = arguments.isMultilingual
+				, draftsEnabled   = arguments.draftsEnabled
+			}
+		);
+
 		if ( arguments.includeActions ) {
 			QueryAddColumn( records, "_options" , optionsCol );
 			ArrayAppend( getRecordsArgs.gridFields, "_options" );
@@ -2839,6 +2858,7 @@ component extends="preside.system.base.AdminHandler" {
 				, adminOwner           = event.getAdminUserId()
 				, title                = "cms:datamanager.batchdelete.task.title"
 				, returnUrl            = event.buildAdminLink( objectName=objectName, operation="listing" )
+				, resultUrl            = postActionUrl
 				, discardAfterInterval = CreateTimeSpan( 0, 0, 5, 0 )
 				, args       = {
 					  objectName   = objectName
@@ -3373,6 +3393,7 @@ component extends="preside.system.base.AdminHandler" {
 			, mimetype           = exporterDetail.mimeType
 			, additionalArgs     = arguments.additionalArgs
 			, templateConfig     = dataExportTemplateService.getSubmittedConfig( exportTemplate, objectName )
+			, expandNestedFields = dataExportTemplateService.templateMethodExists( exportTemplate, "getSelectFields" ) ? false : true
 		};
 
 		try {
@@ -3808,7 +3829,7 @@ component extends="preside.system.base.AdminHandler" {
 		args.treeFetchUrl = event.buildAdminLink(
 			  objectName  = objectName
 			, operation   = "getNodesForTreeView"
-			, queryString = "gridFields=#ArrayToList( args.gridFields ?: [] )#"
+			, queryString = "gridFields=#ArrayToList( args.gridFields ?: [] )#&hiddenGridFields=#ArrayToList( args.hiddenGridFields ?: [] )#"
 		);
 
 		return renderView( view="/admin/datamanager/_treeView", args=args );
@@ -3825,6 +3846,12 @@ component extends="preside.system.base.AdminHandler" {
 			, draftsEnabled      = IsTrue( prc.draftsEnabled  ?: "" )
 			, baseViewRecordLink = event.buildAdminLink( objectName=objectName, recordId="{recordId}" )
 		};
+
+		if ( StructKeyExists( rc, "hiddenGridFields" ) )  {
+			args.hiddenGridFields = ListToArray( rc.hiddenGridFields );
+		} else {
+			args.hiddenGridFields = _getObjectHiddenFieldsForGrid( objectName );
+		}
 
 		var nodes = runEvent(
 			  event          = "admin.datamanager._getRecordsForTreeView"
@@ -3851,11 +3878,14 @@ component extends="preside.system.base.AdminHandler" {
 			, treeViewParent = parent
 			, treeView       = true
 			, extraFilters   = []
-			, gridFields     = args.gridFields ?: []
+			, gridFields     = []
 			, orderby        = dataManagerService.getTreeSortOrder( objectName )
 			, autoGroupBy    = true
 			, maxRows        = 0
 		};
+
+		ArrayAppend( getRecordsArgs.gridFields, args.gridFields       ?: [], true );
+		ArrayAppend( getRecordsArgs.gridFields, args.hiddenGridFields ?: [], true );
 
 		customizationService.runCustomization(
 			  objectName = objectName

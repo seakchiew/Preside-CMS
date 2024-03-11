@@ -12,7 +12,7 @@ component displayName="Ad-hoc Task Manager Service" {
 	/**
 	 * @siteService.inject siteService
 	 * @threadUtil.inject  threadUtil
-	 * @logger.inject      logbox:logger:taskmanager
+	 * @logger.inject      logbox:logger:adhocTaskManager
  	 * @executor.inject    presideAdhocTaskManagerExecutor
 	 */
 	public any function init(
@@ -49,6 +49,7 @@ component displayName="Ad-hoc Task Manager Service" {
 	 * @titleData            Optional array of strings that will be passed into translateResource() along with title URI to create translatable title
 	 * @resultUrl            Optional URL at which the result of this task can be viewed / downloaded. The token, `{taskId}`, within the URL will be replaced with the actual ID of the task
 	 * @returnUrl            Optional URL to which to direct users from core admin UIs when they have finished with viewing a task
+	 * @reference            Optional string with which to provide a key reference for your task
 	 */
 	public string function createTask(
 		  required string   event
@@ -64,7 +65,17 @@ component displayName="Ad-hoc Task Manager Service" {
 		,          array    titleData            = []
 		,          string   resultUrl            = ""
 		,          string   returnUrl            = ""
+		,          string   reference            = ""
 	) {
+		var nextAttemptDate = "";
+
+		if ( arguments.runNow ) {
+			var delayInCaseFailsToStart = 30;
+			nextAttemptDate = DateAdd( "s", delayInCaseFailsToStart, _now() );
+		} else if ( arguments.runIn ) {
+			nextAttemptDate = DateAdd( "s", _timespanToSeconds( arguments.runIn ), _now() );
+		}
+
 		var taskId = $getPresideObject( "taskmanager_adhoc_task" ).insertData( {
 			  event                  = arguments.event
 			, event_args             = SerializeJson( _addRequestStateArgs( arguments.args ) )
@@ -72,12 +83,13 @@ component displayName="Ad-hoc Task Manager Service" {
 			, web_owner              = arguments.webOwner
 			, discard_on_complete    = arguments.discardOnComplete
 			, discard_after_interval = _isTimespan( arguments.discardAfterInterval ?: "" ) ? _timespanToSeconds( arguments.discardAfterInterval ) : arguments.discardAfterInterval
-			, next_attempt_date      = ( arguments.runNow || !Val( arguments.runIn ) ) ? "" : DateAdd( "s", _timespanToSeconds( arguments.runIn ), _now() )
+			, next_attempt_date      = nextAttemptDate
 			, retry_interval         = _serializeRetryInterval( arguments.retryInterval )
 			, title                  = arguments.title
 			, title_data             = SerializeJson( arguments.titleData )
 			, result_url             = arguments.resultUrl
 			, return_url             = arguments.returnUrl
+			, reference              = arguments.reference
 		} );
 
 		if ( arguments.resultUrl.findNoCase( "{taskId}" ) ) {
@@ -113,7 +125,7 @@ component displayName="Ad-hoc Task Manager Service" {
 				return true;
 			}
 
-			if ( task.status == "running" ) {
+			if ( task.status == "running" || !markTaskAsRunning( taskId=arguments.taskId ) ) {
 				$raiseError( error={
 					  type    = "AdHoTaskManagerService.task.already.running"
 					, message = "Task not run. The task with ID, [#arguments.taskId#], is already running."
@@ -122,7 +134,6 @@ component displayName="Ad-hoc Task Manager Service" {
 				return false;
 			}
 
-			markTaskAsRunning( taskId=arguments.taskId );
 			$getRequestContext().setValue( name="_runningAdhocTaskId", value=arguments.taskId, private=true );
 
 			var logger   = _getTaskLogger( taskId );
@@ -132,7 +143,7 @@ component displayName="Ad-hoc Task Manager Service" {
 			try {
 				success = $getColdbox().runEvent(
 					  event          = task.event
-					, eventArguments = { args=args, logger=logger, progress=progress }
+					, eventArguments = { args=args, logger=logger, progress=progress, task=task }
 					, private        = true
 					, prepostExempt  = true
 				);
@@ -239,10 +250,11 @@ component displayName="Ad-hoc Task Manager Service" {
 	 * @autodoc true
 	 * @taskId  ID of the task to mark as running
 	 */
-	public void function markTaskAsRunning( required string taskId ) {
-		$getPresideObject( "taskmanager_adhoc_task" ).updateData(
-			  id   = arguments.taskId
-			, data = {
+	public boolean function markTaskAsRunning( required string taskId ) {
+		return $getPresideObject( "taskmanager_adhoc_task" ).updateData(
+			  filter       = "id = :id and status != :status"
+			, filterParams = { id=arguments.taskId, status="running"}
+			, data         = {
 				  status              = "running"
 				, started_on          = _now()
 				, progress_percentage = 0
@@ -426,6 +438,37 @@ component displayName="Ad-hoc Task Manager Service" {
 		return {};
 	}
 
+	/**
+	 * Returns a db query of the individual log lines of the task
+	 * [ts, severity, line ].
+	 *
+	 * @autodoc          true
+	 * @taskId           ID of the task whose logs you wish to get
+	 * @fetchAfterLines  Only fetch lines after this line number
+	 */
+	public query function getLogLines( required string taskId, numeric fetchAfterLines=0 ) {
+		return $getPresideObject( "taskmanager_adhoc_task_log_line" ).selectData(
+			  selectFields = [ "ts", "severity", "line" ]
+			, orderby      = "id"
+			, maxRows      = arguments.fetchAfterLines ? 1000000 : 0 // impossibly high number. Forcing startRow to work without really wanting a max rows
+			, startRow     = arguments.fetchAfterLines + 1
+			, filter       = { task=arguments.taskId }
+		);
+	}
+
+	/**
+	 * Returns number of lines in this tasks logs
+	 *
+	 * @autodoc          true
+	 * @taskId           ID of the task whose logs you wish to get
+	 */
+	public numeric function getLogLineCount( required string taskId ) {
+		return $getPresideObject( "taskmanager_adhoc_task_log_line" ).selectData(
+			  recordCountOnly = true
+			, filter          = { task=arguments.taskId }
+		);
+	}
+
 
 	/**
 	 * Discards the given task
@@ -568,7 +611,7 @@ component displayName="Ad-hoc Task Manager Service" {
 		return new TaskManagerLoggerWrapper(
 			  logboxLogger   = _getLogger()
 			, taskRunId      = arguments.taskId
-			, taskHistoryDao = $getPresideObject( "taskmanager_adhoc_task" )
+			, taskHistoryDao = $getPresideObject( "taskmanager_adhoc_task_log_line" )
 		);
 	}
 

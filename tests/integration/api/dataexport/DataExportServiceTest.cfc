@@ -244,6 +244,10 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 					  objectName    = objectName
 					, attributeName = "propertyNames"
 				).$results( propNames );
+				mockPresideObjectService.$( "getObjectAttribute" ).$args(
+					  objectName    = objectName
+					, attributeName = "dataExportExpandManytoOneFields"
+				).$results( "" );
 				mockPresideObjectService.$( "getObjectProperties" ).$args( objectName ).$results( props );
 				mockPresideObjectService.$( "getResourceBundleUriRoot" ).$args( objectName ).$results( uriRoot )
 
@@ -276,6 +280,9 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 		mockCustomizationService = createEmptyMock( "preside.system.services.admin.DataManagerCustomizationService" );
 		mockCustomizationService.$( "runCustomization" );
 
+		mockScheduledExportService = createEmptyMock( "preside.system.services.dataExport.ScheduledExportService" );
+		mockScheduledExportService.$( "saveNumberOfRecordsToHistoryExport" );
+
 		mockPresideObjectService = createEmptyMock( "preside.system.services.presideObjects.PresideObjectService" );
 		mockColdbox              = createStub();
 
@@ -283,6 +290,8 @@ component extends="resources.HelperObjects.PresideBddTestCase" {
 			    dataExporterReader              = mockDataExporterReader
 			  , dataManagerCustomizationService = mockCustomizationService
 			  , dataExportTemplateService       = mockDataExportTemplateService
+			  , scheduledExportService          = mockScheduledExportService
+			  , defaultDataExportSettings       = {}
 		) );
 
 		service.$( "$getPresideObjectService", mockPresideObjectService );

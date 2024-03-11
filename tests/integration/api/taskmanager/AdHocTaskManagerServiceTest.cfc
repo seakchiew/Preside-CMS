@@ -14,7 +14,7 @@ component extends="testbox.system.BaseSpec" {
 				var mockProgress = _mockProgress( service, taskId );
 				var mockLogger   = _mockLogger( service, taskId );
 
-				service.$( "markTaskAsRunning" );
+				service.$( "markTaskAsRunning", true );
 				service.$( "completeTask" );
 				service.$( "failTask" );
 
@@ -24,7 +24,7 @@ component extends="testbox.system.BaseSpec" {
 				expect( log.len() ).toBe( 1 );
 				expect( log[1] ).toBe( {
 					  event          = event
-					, eventArguments = { args=args, logger=mockLogger, progress=mockProgress }
+					, eventArguments = { args=args, logger=mockLogger, progress=mockProgress, task=taskDef }
 					, private        = true
 					, prepostExempt  = true
 				} );
@@ -43,7 +43,7 @@ component extends="testbox.system.BaseSpec" {
 				var mockProgress = _mockProgress( service, taskId );
 				var mockLogger   = _mockLogger( service, taskId );
 
-				service.$( "markTaskAsRunning" );
+				service.$( "markTaskAsRunning", true );
 				service.$( "completeTask" );
 				service.$( "failTask" );
 				service.$( "_now", nowish );
@@ -69,7 +69,7 @@ component extends="testbox.system.BaseSpec" {
 
 				service.$( "completeTask" );
 				service.$( "failTask" );
-				service.$( "markTaskAsRunning" );
+				service.$( "markTaskAsRunning", true );
 
 				service.runTask( taskId );
 
@@ -92,7 +92,7 @@ component extends="testbox.system.BaseSpec" {
 
 				service.$( "completeTask" );
 				service.$( "failTask" );
-				service.$( "markTaskAsRunning" );
+				service.$( "markTaskAsRunning", true );
 
 				expect( service.runTask( taskId ) ).toBe( false );
 
@@ -119,7 +119,7 @@ component extends="testbox.system.BaseSpec" {
 				service.$( "$raiseError" );
 				service.$( "completeTask" );
 				service.$( "failTask" );
-				service.$( "markTaskAsRunning" );
+				service.$( "markTaskAsRunning", true );
 				mockLogger.$( "error" );
 
 				expect( service.runTask( taskId ) ).toBe( false );
@@ -154,7 +154,7 @@ component extends="testbox.system.BaseSpec" {
 				service.$( "$raiseError" );
 				service.$( "completeTask" );
 				service.$( "failTask" );
-				service.$( "markTaskAsRunning" );
+				service.$( "markTaskAsRunning", true );
 
 				expect( service.runTask( taskId ) ).toBe( false );
 				expect( mockColdbox.$callLog().runEvent.len() ).toBe( 0 );
@@ -179,7 +179,7 @@ component extends="testbox.system.BaseSpec" {
 
 				service.$( "completeTask" );
 				service.$( "failTask" );
-				service.$( "markTaskAsRunning" );
+				service.$( "markTaskAsRunning", true );
 
 				service.runTask( taskId );
 
@@ -202,7 +202,7 @@ component extends="testbox.system.BaseSpec" {
 
 				service.$( "completeTask" );
 				service.$( "failTask" );
-				service.$( "markTaskAsRunning" );
+				service.$( "markTaskAsRunning", true );
 
 				service.runTask( taskId );
 
@@ -237,6 +237,7 @@ component extends="testbox.system.BaseSpec" {
 					, result_url          = ""
 					, return_url          = ""
 					, next_attempt_date   = ""
+					, reference           = ""
 				} ).$results( taskId );
 
 				expect( service.createTask(
@@ -261,11 +262,12 @@ component extends="testbox.system.BaseSpec" {
 					, discard_on_complete = true
 					, discard_after_interval = 86400
 					, retry_interval      = "[]"
-					, next_attempt_date   = ""
+					, next_attempt_date   = DateAdd( "s", 30, nowish )
 					, title               = "myresource:export.title"
 					, title_data          = '["test","this"]'
 					, result_url          = "http://www.mysite.com/download/export/"
 					, return_url          = "http://www.mysite.com/download/cancelled/"
+					, reference           = ""
 				} ).$results( taskId );
 				service.$( "runTaskInThread" );
 
@@ -307,6 +309,7 @@ component extends="testbox.system.BaseSpec" {
 					, result_url          = resultUrl
 					, return_url          = ""
 					, next_attempt_date   = ""
+					, reference           = ""
 				} ).$results( taskId );
 
 				service.$( "setResultUrl" );
@@ -346,6 +349,7 @@ component extends="testbox.system.BaseSpec" {
 					, next_attempt_date   = ""
 					, result_url          = ""
 					, return_url          = ""
+					, reference           = ""
 				} ).$results( taskId );
 
 				expect( service.createTask(
@@ -375,6 +379,7 @@ component extends="testbox.system.BaseSpec" {
 					, next_attempt_date   = ""
 					, result_url          = ""
 					, return_url          = ""
+					, reference           = ""
 				} ).$results( taskId );
 
 				expect( service.createTask(
@@ -406,6 +411,7 @@ component extends="testbox.system.BaseSpec" {
 					, result_url          = "http://www.mysite.com/download/export/"
 					, return_url          = "http://www.mysite.com/download/cancelled/"
 					, next_attempt_date   = nextRunDate
+					, reference           = ""
 				} ).$results( taskId );
 
 				service.$( "runTaskInThread" );
@@ -435,7 +441,7 @@ component extends="testbox.system.BaseSpec" {
 
 				var log = mockTaskDao.$callLog().updateData;
 				expect( log.len() ).toBe( 1 );
-				expect( log[1] ).toBe( { id=taskId, data={
+				expect( log[1] ).toBe( { filter="id = :id and status != :status", filterParams={ id=taskId, status="running" }, data={
 					  status              = "running"
 					, started_on          = nowish
 					, finished_on         = ""

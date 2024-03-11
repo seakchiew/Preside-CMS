@@ -32,13 +32,13 @@ component displayname="Form builder: global question response" extends="preside.
 	property name="submitted_by" type="string"  dbtype="varchar" maxlength=100 renderer="formUser";
 
 	// response possibly related to these
-	property name="submission"   relationship="many-to-one" relatedto="formbuilder_formsubmission" required=false excludeDataExport=true;
-	property name="website_user" relationship="many-to-one" relatedto="website_user"               required=false excludeDataExport=true  adminRenderer="none";
-	property name="admin_user"   relationship="many-to-one" relatedto="security_user"              required=false excludeDataExport=true  adminRenderer="none";
+	property name="submission"   relationship="many-to-one" relatedto="formbuilder_formsubmission" required=false excludeDataExport=true onDelete="cascade";
+	property name="website_user" relationship="many-to-one" relatedto="website_user"               required=false excludeDataExport=true adminRenderer="none";
+	property name="admin_user"   relationship="many-to-one" relatedto="security_user"              required=false excludeDataExport=true adminRenderer="none";
 
-	property name="is_website_user" type="boolean" dbtype="boolean" formula="case when website_user is not null then 1 else 0 end"  adminRenderer="none";
-	property name="is_admin_user"   type="boolean" dbtype="boolean" formula="case when admin_user is not null then 1 else 0 end"  adminRenderer="none";
+	property name="is_website_user" type="boolean" dbtype="boolean" formula="case when ${prefix}website_user is not null then 1 else 0 end"  adminRenderer="none";
+	property name="is_admin_user"   type="boolean" dbtype="boolean" formula="case when ${prefix}admin_user is not null then 1 else 0 end"  adminRenderer="none";
 
-	property name="parent_name"     type="string"  dbtype="varchar" formula="case when submission_type='formbuilder' then submission$form.name else '' end "  adminRenderer="none";
+	property name="parent_name"     type="string"  dbtype="varchar" formula="case when ${prefix}submission_type='formbuilder' then ${prefix}submission$form.name else '' end "  adminRenderer="none";
 
 }

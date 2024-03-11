@@ -82,7 +82,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		return {};
 	}
 
-	public string function getSiteUrl( string siteId="", boolean includePath=true, boolean includeLanguageSlug=true ) {
+	public string function getSiteUrl( string siteId="", boolean includePath=true, boolean includeLanguageSlug=true, boolean includeProtocol=true ) {
 		var prc       = getRequestContext().getCollection( private=true );
 		var fetchSite = ( prc._forceDomainLookup ?: false ) || ( Len( Trim( arguments.siteId ) ) && arguments.siteId != getSiteId() );
 		var site      = fetchSite ? getModel( "siteService" ).getSite( arguments.siteId ) : getSite();
@@ -97,7 +97,11 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 			domain = cgi.server_name;
 		}
 
-		var siteUrl = protocol & "://" & domain;
+		var siteUrl = domain;
+
+		if ( arguments.includeProtocol ) {
+			siteUrl = protocol & "://" & domain;
+		}
 
 		prc.delete( "_forceDomainLookup" );
 
@@ -377,9 +381,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 	}
 
 	public boolean function showNonLiveContent() {
-		try {
-			return request._showNonLiveContent;
-		} catch( any e ) {
+		if ( !StructKeyExists( request, "_showNonLiveContent" ) ) {
 			// we may get called very early in the request before this has been run.
 			// manually call it to ensure we have all the path info setup for the isAdminRequest() call, below
 			getController().getRoutingService().getCgiElement( "path_info", getRequestContext() );
@@ -389,9 +391,9 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 			} else {
 				request._showNonLiveContent = getModel( "loginService" ).isShowNonLiveEnabled();
 			}
-
-			return request._showNonLiveContent;
 		}
+
+		return request._showNonLiveContent;
 	}
 
 	public struct function getAdminUserDetails() {
@@ -424,11 +426,17 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		return getModel( "AuditService" ).log( argumentCollection = arguments );
 	}
 
-	public void function addAdminBreadCrumb( required string title, required string link ) {
+	public void function addAdminBreadCrumb( required string title, required string link, numeric position ) {
 		var event  = getRequestContext();
 		var crumbs = event.getValue( name="_adminBreadCrumbs", defaultValue=[], private=true );
+		var crumb  = { title=arguments.title, link=arguments.link };
 
-		ArrayAppend( crumbs, { title=arguments.title, link=arguments.link } );
+		if ( StructKeyExists( arguments, "position" ) ) {
+			var pos = _getBreadcrumbInsertPosition( crumbs, arguments.position );
+			ArrayInsertAt( crumbs, pos, crumb );
+		} else {
+			ArrayAppend( crumbs, crumb );
+		}
 
 		event.setValue( name="_adminBreadCrumbs", value=crumbs, private=true );
 	}
@@ -655,9 +663,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 	}
 
 	public boolean function isStatelessRequest() {
-		var appSettings = GetApplicationSettings();
-
-		return IsBoolean( appSettings.statelessRequest ?: "" ) && appSettings.statelessRequest;
+		return IsBoolean( request._sessionSettings.statelessRequest ?: "" ) && request._sessionSettings.statelessRequest;
 	}
 
 	public void function setXFrameOptionsHeader( string value ) {
@@ -759,13 +765,15 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 		clearBreadCrumbs();
 
-		if ( !IsNull( arguments.parentpage ?: NullValue() ) && arguments.parentPage.recordCount ) {
-			page.parent_page = arguments.parentPage.id;
+		announceInterception( "preInitializeDummyPresideSiteTreePage", { page = page } );
 
-			var ancestors = sitetreeSvc.getAncestors( id = arguments.parentPage.id );
+		if ( !IsNull( page.parentpage ?: NullValue() ) && page.parentPage.recordCount ) {
+			page.parent_page = page.parentPage.id;
+
+			var ancestors = sitetreeSvc.getAncestors( id = page.parentPage.id );
 
 			page.ancestorList = ancestors.recordCount ? ValueList( ancestors.id ) : "";
-			page.ancestorList = ListAppend( page.ancestorList, arguments.parentPage.id );
+			page.ancestorList = ListAppend( page.ancestorList, page.parentPage.id );
 
 			page.permissionContext = [];
 			for( var i=ListLen( page.ancestorList ); i > 0; i-- ){
@@ -777,7 +785,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 				page.ancestors.append( ancestor );
 			}
 
-			for( var p in arguments.parentPage ){
+			for( var p in page.parentPage ){
 				addBreadCrumb( title=p.title, link=buildLink( page=p.id ), menuTitle=p.navigation_title ?: "" );
 				page.ancestors.append( p );
 			}
@@ -939,14 +947,20 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		return getPageProperty( "permissionContext", [] );
 	}
 
-	public void function addBreadCrumb( required string title, required string link, string menuTitle="" ) {
+	public void function addBreadCrumb( required string title, required string link, string menuTitle="", numeric position ) {
 		var crumbs = getBreadCrumbs();
-
-		ArrayAppend( crumbs, {
+		var crumb  = {
 			  title     = arguments.title
 			, link      = arguments.link
 			, menuTitle = arguments.menuTitle.len() ? arguments.menuTitle : arguments.title
-		} );
+		}
+
+		if ( StructKeyExists( arguments, "position" ) ) {
+			var pos = _getBreadcrumbInsertPosition( crumbs, arguments.position );
+			ArrayInsertAt( crumbs, pos, crumb );
+		} else {
+			ArrayAppend( crumbs, crumb );
+		}
 
 		getRequestContext().setValue( name="_breadCrumbs", value=crumbs, private=true );
 	}
@@ -1164,6 +1178,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 // Threading
 	public boolean function isBackgroundThread( boolean value ) {
 		if ( structKeyExists( arguments, "value" ) ) {
+			request.__isbgthread = arguments.value;
 			getRequestContext().setValue( name="_isBackgroundThread", value=arguments.value, private=true );
 		}
 		return getRequestContext().getValue( name="_isBackgroundThread", defaultValue=false, private=true );
@@ -1210,5 +1225,18 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		}
 
 		return qs;
+	}
+
+	private numeric function _getBreadcrumbInsertPosition( required array crumbs, required numeric position ) {
+		var crumbLen = ArrayLen( arguments.crumbs );
+		var pos      = Int( arguments.position );
+		if ( pos > crumbLen ) {
+			pos = crumbLen + 1;
+		} else if ( pos < 0 ) {
+			pos = crumbLen + pos + 1;
+		}
+		pos = Max( pos, 1 );
+
+		return pos;
 	}
 }

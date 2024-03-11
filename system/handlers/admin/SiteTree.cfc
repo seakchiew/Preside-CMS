@@ -9,7 +9,6 @@ component extends="preside.system.base.AdminHandler" {
 	property name="versioningService"                inject="versioningService";
 	property name="multilingualPresideObjectService" inject="multilingualPresideObjectService";
 	property name="messageBox"                       inject="messagebox@cbmessagebox";
-	property name="pageCache"                        inject="cachebox:PresidePageCache";
 	property name="cookieService"                    inject="cookieService";
 
 	public void function preHandler( event, rc, prc ) {
@@ -56,6 +55,34 @@ component extends="preside.system.base.AdminHandler" {
 		] );
 
 		prc.trashCount = siteTreeService.getTrashCount();
+	}
+
+	private void function _siteTree( event, rc, prc ) {
+		if ( ( rc.selected ?: "" ).len() ) {
+			prc.selectedAncestors = sitetreeService.getAncestors( id=rc.selected, selectFields=[ "id" ] );
+			prc.selectedAncestors = prc.selectedAncestors.recordCount ? ValueArray( prc.selectedAncestors.id ) : [];
+			event.includeData( { selectedNode = rc.selected } );
+		}
+		prc.activeTree = siteTreeService.getTree( trash = false, format="nestedArray", maxDepth=0, selectFields=[
+			  "page.id"
+			, "page.parent_page"
+			, "page.title"
+			, "page.slug"
+			, "page.main_image"
+			, "page.active"
+			, "page.page_type"
+			, "page.datecreated"
+			, "page.datemodified"
+			, "page._hierarchy_slug as full_slug"
+			, "page.trashed"
+			, "page.access_restriction"
+			, "page._version_is_draft as is_draft"
+			, "page._version_has_drafts as has_drafts"
+			, "Count( child_pages.id ) as child_count"
+		] );
+
+		prc.trashCount = siteTreeService.getTrashCount();
+		renderView( view="/admin/sitetree/index", args=args );
 	}
 
 	public void function ajaxChildNodes( event, rc, prc ) {
@@ -267,6 +294,7 @@ component extends="preside.system.base.AdminHandler" {
 		var pageId           = rc.id               ?: "";
 		var validationResult = rc.validationResult ?: "";
 		var pageType         = "";
+		var tab              = rc.tab              ?: "";
 
 		_checkPermissions( argumentCollection=arguments, key="edit", pageId=pageId );
 		prc.page         = _getPageAndThrowOnMissing( argumentCollection=arguments, allowVersions=true );
@@ -332,6 +360,9 @@ component extends="preside.system.base.AdminHandler" {
 		} else {
 			prc.backToTreeTitle = translateResource( "cms:sitetree.back.to.tree.link" );
 			prc.backToTreeLink = event.buildAdminLink( linkto="sitetree", querystring="selected=" & prc.page.id );
+			if ( Len( tab ) ) {
+				prc.backToTreeLink &= "&tab=#tab#";
+			}
 		}
 
 		if ( prc.canTranslate ) {
@@ -473,7 +504,7 @@ component extends="preside.system.base.AdminHandler" {
 		}
 
 		formData = event.getCollectionForForm( formName=formName, stripPermissionedFields=true, permissionContext="page", permissionContextKeys=( prc.pagePermissionContext ?: [] ) );
-		validationResult = validateForm( formName=formName, formData=formData, stripPermissionedFields=true, permissionContext="page", permissionContextKeys=( prc.pagePermissionContext ?: [] ) );
+		validationResult = validateForm( formName=formName, formData=formData, stripPermissionedFields=true, permissionContext="page", permissionContextKeys=( prc.pagePermissionContext ?: [] ), bypassTenants=[ "site" ] );
 
 		if ( !validationResult.validated() ) {
 			messageBox.error( translateResource( "cms:sitetree.data.validation.error" ) );
@@ -1199,8 +1230,7 @@ component extends="preside.system.base.AdminHandler" {
 		var pageId = rc.id ?: "";
 
 		if ( pageId.isEmpty() ) {
-			getController().getCachebox().clearAll();
-			announceInterception( "onClearCaches", {} );
+			siteTreeService.clearAllCaches();
 
 			event.audit(
 				  action = "clear_page_cache"
@@ -1209,16 +1239,7 @@ component extends="preside.system.base.AdminHandler" {
 		} else {
 			var page = _getPageAndThrowOnMissing( argumentCollection=arguments );
 
-			var pageUrl    = event.buildLink( page=pageId ).reReplace( "^https?://.*?/", "/" );
-			var sectionUrl = pageUrl.reReplace( "\.html$", "/" );
-
-			pageCache.clearByKeySnippet( pageUrl );
-			pageCache.clearByKeySnippet( sectionUrl );
-
-			announceInterception( "onClearPageCaches", {
-				  pageUrl    = pageUrl
-				, sectionUrl = sectionUrl
-			} );
+			siteTreeService.clearPageCache( pageId );
 
 			event.audit(
 				  action   = "clear_cache_for_page"

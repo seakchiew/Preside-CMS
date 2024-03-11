@@ -38,7 +38,7 @@ component displayName="Rules Engine Filter Service" {
 		,          array   expressionArray
 		,          boolean ignoreSegmentation = false
 	) {
-		if ( Len( arguments.filterId ) && isSegmentionFilter( arguments.filterId ) && !arguments.ignoreSegmentation ) {
+		if ( Len( arguments.filterId ) && isSegmentationFilter( arguments.filterId ) && !arguments.ignoreSegmentation ) {
 			return prepareSegmentationFilter( arguments.objectName, arguments.filterId );
 		}
 
@@ -53,10 +53,12 @@ component displayName="Rules Engine Filter Service" {
 		var havingSql  = "";
 		var havingfields = [];
 
-		for( var i=1; i <= expressionArray.len(); i++ ) {
+		for( var i=1; i <= ArrayLen( expressionArray ); i++ ) {
 			var isJoin = !(i mod 2);
 			if ( isJoin ) {
-				join = expressionArray[i] == "and" ? "and" : "or";
+				if ( Len( Trim( sql ) ) ) {
+					join = expressionArray[i] == "and" ? "and" : "or";
+				}
 			} else if ( IsArray( expressionArray[i] ) ) {
 				var subFilter = prepareFilter( objectName=objectName, expressionArray=expressionArray[i] );
 
@@ -67,26 +69,27 @@ component displayName="Rules Engine Filter Service" {
 					sql &= " #join# #subfilter.filter#";
 				}
 
-				params.append( subFilter.filterParams );
-				extraJoins.append( subFilter.extraJoins, true );
+				StructAppend( params, subFilter.filterParams );
+				ArrayAppend( extraJoins, subFilter.extraJoins, true );
 			} else {
 				var rawFilters = _getExpressionService().prepareExpressionFilters(
 					  expressionId     = expressionArray[i].expression ?: ""
 					, configuredFields = expressionArray[i].fields     ?: {}
 					, objectName       = arguments.objectName
 				);
+				var rawFilterCount = ArrayLen( rawFilters );
 
-				if ( rawFilters.len() ) {
+				if ( rawFilterCount ) {
 					sql &= " #join# ";
-					if ( rawFilters.len() > 1 ) {
+					if ( rawFilterCount > 1 ) {
 						sql &= "( ";
 					}
 					var delim = "";
 					for( var rawFilter in rawFilters ) {
-						extraJoins.append( rawFilter.extraJoins ?: [], true );
-						params.append( rawFilter.filterParams ?: {} );
+						ArrayAppend( extraJoins, rawFilter.extraJoins ?: [], true );
+						StructAppend( params, rawFilter.filterParams ?: {} );
 						if ( IsStruct( rawFilter.filter ?: "" ) ){
-							params.append( rawFilter.filter );
+							StructAppend( params, rawFilter.filter );
 						}
 
 						var rawSql = dbAdapter.getClauseSql( filter=rawFilter.filter ?: "", tableAlias=arguments.objectName );
@@ -95,25 +98,25 @@ component displayName="Rules Engine Filter Service" {
 						}
 						var having = rawFilter.having ?: "";
 
-						if ( having.len() ) {
+						if ( Len( having ) ) {
 							isHaving = true;
-							if ( havingSql.len() ) {
+							if ( Len( havingSql ) ) {
 								havingSql = "( #havingSql# and #having# )";
 							} else {
 								havingSql = having;
 							}
 						}
 
-						if ( rawSql.len() ) {
+						if ( Len( rawSql ) ) {
 							sql  &= delim & Trim( Trim( rawSql ).reReplace( "^where", "" ) );
 							delim = " and ";
 
 							var havingField = "";
 
-							if( Len( Trim( rawFilter.propertyName ?: "" ) ) ) {
+							if ( Len( Trim( rawFilter.propertyName ?: "" ) ) ) {
 								havingField = rawFilter.propertyName;
 							} else {
-								var firstField = ListFirst( Trim( Replace( Len( having ) ? having : ( isStruct( rawFilter.filter ?: "" ) ? "" : rawFilter.filter ?: "" ), "(", "", "all" ) ), " " );
+								var firstField = ListFirst( Trim( Replace( Len( having ) ? having : ( IsStruct( rawFilter.filter ?: "" ) ? "" : rawFilter.filter ?: "" ), "(", "", "all" ) ), " " );
 								if( ListLen( firstField, "." ) == 2 ) {
 									havingField = firstField;
 								}
@@ -124,22 +127,22 @@ component displayName="Rules Engine Filter Service" {
 							}
 						}
 					}
-					if ( rawFilters.len() > 1 ) {
+					if ( rawFilterCount > 1 ) {
 						sql &= " )";
 					}
 				}
 			}
 		}
 
-		if ( sql.trim().len() ) {
-			sql = "( #sql.trim()# )";
+		if ( Len( Trim( sql ) ) ) {
+			sql = "( #Trim( sql )# )";
 		}
 
 		var returnValue = { filter=Trim( sql ), filterParams=params, extraJoins=extraJoins };
 
 		if ( isHaving ) {
-			returnValue.having        = havingSql;
-			returnValue.havingfields  = havingfields;
+			returnValue.having       = havingSql;
+			returnValue.havingfields = havingfields;
 		}
 		return returnValue;
 	}
@@ -155,8 +158,10 @@ component displayName="Rules Engine Filter Service" {
 	 * @expressionArray.hint Cofigured expression array of the condition to prepare a filter for
 	 */
 	public any function selectData(
-		  required string objectName
-		, required array  expressionArray
+		  required string  objectName
+		, required array   expressionArray
+		,          boolean distinct      = true
+		,          boolean forceDistinct = false
 	) {
 		var args = Duplicate( arguments );
 
@@ -166,7 +171,21 @@ component displayName="Rules Engine Filter Service" {
 			, expressionArray = arguments.expressionArray
 		) );
 		args.autoGroupBy = true;
-		args.distinct    = true;
+
+		if ( args.distinct && !args.forceDistinct ) {
+			args.distinct = false;
+			for ( var extraFilter in args.extraFilters ) {
+				for ( var extraJoin in extraFilter.extraJoins ?: [] ) {
+					if ( Len( extraJoin.subQuery ?: "" ) ) {
+						args.distinct = true;
+						break;
+					}
+				}
+
+				if ( args.distinct ) { break; }
+			}
+		}
+
 
 		args.delete( "expressionArray" );
 
@@ -185,6 +204,12 @@ component displayName="Rules Engine Filter Service" {
 		  required string objectName
 		, required array  expressionArray
 	) {
+		if ( !StructKeyExists( arguments, "selectFields" ) ) {
+			var idField = $getPresideObjectService().getIdField( arguments.objectName );
+			if ( Len( idField ) ) {
+				arguments.selectFields = [ idField ];
+			}
+		}
 		return selectData( argumentCollection=arguments, recordCountOnly=true );
 	}
 
@@ -417,6 +442,9 @@ component displayName="Rules Engine Filter Service" {
 	}
 
 	public boolean function isSegmentionFilter( required string filterid ) {
+		return isSegmentationFilter( arguments.filterId );
+	}
+	public boolean function isSegmentationFilter( required string filterid ) {
 		return $getPresideObject( "rules_engine_condition" ).dataExists(
 			  filter = { id=arguments.filterId, is_segmentation_filter=true }
 		);
@@ -525,6 +553,32 @@ component displayName="Rules Engine Filter Service" {
 		}
 
 		return true;
+	}
+
+	public struct function prepareAutoFormulaFilter(
+		  required string objectName
+		, required string propertyName
+		, required string filter
+		, required struct filterParams
+	) {
+		var suffix        = CreateUUId().lCase().replace( "-", "", "all" )
+		var subQueryAlias = "formulaFieldSubquery" & suffix;
+		var idField       = $getPresideObjectService().getIdField( arguments.objectName );
+		var subquery      = $getPresideObjectService().selectData(
+			  objectName          = arguments.objectName
+			, selectFields        = [ idField, arguments.propertyName ]
+			, having              = arguments.filter
+			, filterParams        = arguments.filterParams
+			, autoGroupBy         = true
+			, getSqlAndParamsOnly = true
+			, formatSqlParams     = true
+		);
+		var existsSubQuery = "select 1 from (#subQuery.sql#) #subQueryAlias# where #subqueryAlias#.#idField# = #arguments.objectName#.#idField#";
+
+		return {
+			  filter       = "exists (#$obfuscateSqlForPreside( existsSubQuery )#)"
+			, filterParams = subquery.params
+		};
 	}
 
 // PRIVATE HELPERS

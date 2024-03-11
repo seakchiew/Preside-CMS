@@ -18,10 +18,14 @@ component extends="preside.system.base.SystemPresideObject" displayname="Email t
 	property name="save_content"        type="boolean" dbtype="boolean"               required=false default=false;
 	property name="save_content_expiry" type="numeric" dbtype="int"                   required=false;
 
-	property name="html_body" type="string" dbtype="longtext";
-	property name="text_body" type="string" dbtype="longtext";
+	property name="html_body"                 type="string"  dbtype="longtext";
+	property name="text_body"                 type="string"  dbtype="longtext";
+	property name="body_changed_from_default" type="boolean" dbtype="boolean" required=false default=false;
 
 	property name="attachments" relationship="many-to-many" relatedto="asset" relatedVia="email_template_attachment";
+
+	property name="variant_of"  relationship="many-to-one"  relatedto="email_template" required=false;
+	property name="is_variant"  type="boolean" formula="case when ${prefix}variant_of is null then 0 else 1 end";
 
 	property name="email_blueprint"  relationship="many-to-one" relatedTo="email_blueprint";
 	property name="recipient_filter" relationship="many-to-one" relatedto="rules_engine_condition" ondelete="set-null-if-no-cycle-check" onupdate="cascade-if-no-cycle-check";
@@ -40,6 +44,9 @@ component extends="preside.system.base.SystemPresideObject" displayname="Email t
 	property name="schedule_measure"        type="numeric" dbtype="int"                  required=false ignoreChangesForVersioning=true;
 	property name="schedule_sent"           type="boolean" dbtype="boolean"              required=false ignoreChangesForVersioning=true cloneable=false;
 	property name="schedule_next_send_date" type="date"    dbtype="datetime"             required=false ignoreChangesForVersioning=true cloneable=false;
+
+	property name="stats_collection_enabled"    type="boolean" dbtype="boolean" default=true indexes="statscollectionenabled";
+	property name="stats_collection_enabled_on" type="numeric" dbtype="int"                  indexes="statscollectionenabledon";
 
 	property name="last_sent_date" type="date" dbtype="datetime" required=false ignoreChangesForVersioning=true cloneable=false renderer="dateTimeRelative";
 	property name="datemodified" renderer="dateTimeRelative";

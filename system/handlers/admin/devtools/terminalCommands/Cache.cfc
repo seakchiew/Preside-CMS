@@ -1,20 +1,33 @@
-component hint="Interact with and report on system caches" {
+component hint="Interact with and report on system caches" extends="preside.system.base.Command" {
 
 	property name="jsonRpc2Plugin"       inject="JsonRpc2";
 	property name="cachebox"             inject="cachebox";
 	property name="presideObjectService" inject="presideObjectService";
 
 	private function index( event, rc, prc ) {
-		var params       = jsonRpc2Plugin.getRequestParams();
-		var validOperations = [ "stats", "resetstats" ];
+		var params          = jsonRpc2Plugin.getRequestParams();
+		var validOperations = [ "stats", "resetstats", "clear" ];
 
 		params = IsArray( params.commandLineArgs ?: "" ) ? params.commandLineArgs : [];
 
-		if ( !params.len() || !ArrayFindNoCase( validOperations, params[1] ) ) {
-			return Chr(10) & "[[b;white;]Usage:] cache [operation]" & Chr(10) & Chr(10)
-			               & "Valid operations:" & Chr(10) & Chr(10)
-			               & "    [[b;white;]stats]      : Displays summary statistics of the Preside caches." & Chr(10)
-			               & "    [[b;white;]resetstats] : Resets hit, miss and other agreggated statistics to zero." & Chr(10)
+		if ( !ArrayLen( params ) || !ArrayFindNoCase( validOperations, params[1] ) ) {
+			var message = newLine();
+
+			message &= writeText( text="Usage: ", type="help", bold=true );
+			message &= writeText( text="cache <operation>", type="help", newline=2 );
+
+			message &= writeText( text="Valid operations:", type="help", newline=2 );
+
+			message &= writeText( text="    stats            ", type="help", bold=true );
+			message &= writeText( text=" : Displays summary statistics of the Preside caches", type="help", newline=true );
+
+			message &= writeText( text="    resetstats       ", type="help", bold=true );
+			message &= writeText( text=" : Resets hit, miss and other agreggated statistics to zero", type="help", newline=true );
+
+			message &= writeText( text="    clear <cachename>", type="help", bold=true );
+			message &= writeText( text=" : Clears the specified cache or caches", type="help", newline=true );
+
+			return message;
 		}
 
 		return runEvent( event="admin.devtools.terminalCommands.cache.#params[1]#", private=true, prePostExempt=true );
@@ -23,8 +36,8 @@ component hint="Interact with and report on system caches" {
 	private function stats( event, rc, prc ) {
 		var params           = jsonRpc2Plugin.getRequestParams();
 		var full             = ( params.commandLineArgs[ 2 ] ?: "" ) == "full"
-		var cacheName        = params[ 2 ] ?: "";
-		var cachesToShow     = cacheName.listToArray( Trim( cacheName ) );
+		var cacheNames       = full ? "" : ( params.commandLineArgs[ 2 ] ?: "" );
+		var cachesToShow     = ListToArray( Trim( cacheNames ) );
 		var cacheStats       = [];
 		var statsOutput      = "";
 		var titleWidth       = 4;
@@ -35,18 +48,18 @@ component hint="Interact with and report on system caches" {
 		var performanceWidth = 17;
 		var gcsWidth         = 19;
 		var lastReapWidth    = 9;
-		var doSpecialQueryCache = !full && isFeatureEnabled( "queryCachePerObject" ) && !cacheName.listToArray( Trim( cacheName ) ).len();
+		var doSpecialQueryCache = !full && isFeatureEnabled( "queryCachePerObject" ) && !ArrayLen( cachesToShow );
 
-		if ( !cachesToShow.len() ) {
+		if ( !ArrayLen( cachesToShow ) ) {
 			cachesToShow = cachebox.getCacheNames();
 			if ( doSpecialQueryCache ) {
-				for( var i=cachesToShow.len(); i>0; i-- ) {
+				for( var i=ArrayLen( cachesToShow ); i>0; i-- ) {
 					if ( cachesToShow[ i ] == "DefaultQueryCache" || cachesToShow[ i ].reFindNoCase( "^presideQueryCache_.+" ) ) {
-						cachesToShow.deleteAt( i );
+						ArrayDeleteAt( cachesToShow, i );
 					}
 				}
 
-				cachesToShow.append( "_special_query_cache_" );
+				ArrayAppend( cachesToShow, "_special_query_cache_" );
 			}
 		}
 
@@ -55,7 +68,7 @@ component hint="Interact with and report on system caches" {
 				if ( cacheName == "_special_query_cache_" ) {
 					var cacheStat = { name="Query cache" };
 
-					cacheStat.append( presideObjectService.getCacheStats() );
+					StructAppend( cacheStat, presideObjectService.getCacheStats() );
 
 					cacheStat.objects     = NumberFormat( cacheStat.objects ) & " / " & NumberFormat( cacheStat.maxObjects );
 					cacheStat.hits        = NumberFormat( cacheStat.hits );
@@ -79,47 +92,49 @@ component hint="Interact with and report on system caches" {
 					cacheStat.lastReap    = DateTimeFormat( stats.getLastReapDateTime(), "yyyy-mm-dd HH:mm:ss" );
 				}
 
-				cacheStats.append( cacheStat );
+				ArrayAppend( cacheStats, cacheStat );
 
-				titleWidth       = cacheName.len()             > titleWidth       ? cacheName.len()             : titleWidth;
-				objectsWidth     = cacheStat.objects.len()     > objectsWidth     ? cacheStat.objects.len()     : objectsWidth;
-				hitsWidth        = cacheStat.hits.len()        > hitsWidth        ? cacheStat.hits.len()        : hitsWidth;
-				missesWidth      = cacheStat.misses.len()      > missesWidth      ? cacheStat.misses.len()      : missesWidth;
-				evictionsWidth   = cacheStat.evictions.len()   > evictionsWidth   ? cacheStat.evictions.len()   : evictionsWidth;
-				performanceWidth = cacheStat.performance.len() > performanceWidth ? cacheStat.performance.len() : performanceWidth;
-				gcsWidth         = cacheStat.gcs.len()         > gcsWidth         ? cacheStat.gcs.len()         : gcsWidth;
-				lastReapWidth    = cacheStat.lastReap.len()    > lastReapWidth    ? cacheStat.lastReap.len()    : lastReapWidth;
+				titleWidth       = Len( cacheName )             > titleWidth       ? Len( cacheName )             : titleWidth;
+				objectsWidth     = Len( cacheStat.objects )     > objectsWidth     ? Len( cacheStat.objects )     : objectsWidth;
+				hitsWidth        = Len( cacheStat.hits )        > hitsWidth        ? Len( cacheStat.hits )        : hitsWidth;
+				missesWidth      = Len( cacheStat.misses )      > missesWidth      ? Len( cacheStat.misses )      : missesWidth;
+				evictionsWidth   = Len( cacheStat.evictions )   > evictionsWidth   ? Len( cacheStat.evictions )   : evictionsWidth;
+				performanceWidth = Len( cacheStat.performance ) > performanceWidth ? Len( cacheStat.performance ) : performanceWidth;
+				gcsWidth         = Len( cacheStat.gcs )         > gcsWidth         ? Len( cacheStat.gcs )         : gcsWidth;
+				lastReapWidth    = Len( cacheStat.lastReap )    > lastReapWidth    ? Len( cacheStat.lastReap )    : lastReapWidth;
 			}
 		}
 
-		if ( !cacheStats.len() ) {
-			return "[[b;white;]There are no caches that match your query!]" & Chr(10);
+		if ( !ArrayLen( cacheStats ) ) {
+			return writeText( text="There are no caches that match your query!", type="info", bold=true, newline=true );
 		}
 
-		var titleBar = " [[b;white;]Name] #RepeatString( ' ', titleWidth-4 )# "
-					 & " [[b;white;]Objects] #RepeatString( ' ', objectsWidth-7 )# "
-					 & " [[b;white;]Hits] #RepeatString( ' ', hitsWidth-4 )# "
-					 & " [[b;white;]Misses] #RepeatString( ' ', missesWidth-6 )# "
-					 & " [[b;white;]Evictions] #RepeatString( ' ', evictionsWidth-9 )# "
-					 & " [[b;white;]Performance ratio] #RepeatString( ' ', performanceWidth-17 )# "
-					 & " [[b;white;]Garbage collections] #RepeatString( ' ', gcsWidth-19 )# "
-					 & " [[b;white;]Last reap] #RepeatString( ' ', lastReapWidth-9 )#";
+		var titleBar = " Name #RepeatString( ' ', titleWidth-4 )# "
+			& " Objects #RepeatString( ' ', objectsWidth-7 )# "
+			& " Hits #RepeatString( ' ', hitsWidth-4 )# "
+			& " Misses #RepeatString( ' ', missesWidth-6 )# "
+			& " Evictions #RepeatString( ' ', evictionsWidth-9 )# "
+			& " Performance ratio #RepeatString( ' ', performanceWidth-17 )# "
+			& " Garbage collections #RepeatString( ' ', gcsWidth-19 )# "
+			& " Last reap #RepeatString( ' ', lastReapWidth-9 )#";
 
-		var tableWidth = titleBar.len() - 96;
+		var tableWidth = Len( titleBar );
 
-		statsOutput = Chr( 10 ) & titleBar & Chr( 10 ) & RepeatString( "=", tableWidth ) & Chr(10);
+		statsOutput = newLine() & writeText( type="info", bold=true, text=titleBar, newline=true );
+		statsOutput &= writeLine( character="=", length=tableWidth );
 
 		for( var cache in cacheStats ){
-			statsOutput &= " [[b;white;]#cache.name#] #RepeatString( ' ', titleWidth-cache.name.len() )# "
-			             & " #cache.objects# #RepeatString( ' ', objectsWidth-cache.objects.len() )# "
-			             & " #cache.hits# #RepeatString( ' ', hitsWidth-cache.hits.len() )# "
-			             & " #cache.misses# #RepeatString( ' ', missesWidth-cache.misses.len() )# "
-			             & " #cache.evictions# #RepeatString( ' ', evictionsWidth-cache.evictions.len() )# "
-			             & " #cache.performance# #RepeatString( ' ', performanceWidth-cache.performance.len() )# "
-			             & " #cache.gcs# #RepeatString( ' ', gcsWidth-cache.gcs.len() )# "
-			             & " #cache.lastReap# #RepeatString( ' ', lastReapWidth-cache.lastReap.len() )#" & Chr( 10 );
+			statsOutput &= writeText( text=" #cache.name#", type="info", bold=true )
+				& " #RepeatString( ' ', titleWidth-Len( cache.name ) )# "
+				& " #cache.objects# #RepeatString( ' ', objectsWidth-Len( cache.objects ) )# "
+				& " #cache.hits# #RepeatString( ' ', hitsWidth-Len( cache.hits ) )# "
+				& " #cache.misses# #RepeatString( ' ', missesWidth-Len( cache.misses ) )# "
+				& " #cache.evictions# #RepeatString( ' ', evictionsWidth-Len( cache.evictions ) )# "
+				& " #cache.performance# #RepeatString( ' ', performanceWidth-Len( cache.performance ) )# "
+				& " #cache.gcs# #RepeatString( ' ', gcsWidth-Len( cache.gcs ) )# "
+				& " #cache.lastReap# #RepeatString( ' ', lastReapWidth-Len( cache.lastReap ) )#" & newLine();
 
-			statsOutput &= RepeatString( "-", tableWidth ) & Chr(10);
+			statsOutput &= writeLine( tableWidth );
 		}
 
 		return statsOutput;
@@ -127,16 +142,34 @@ component hint="Interact with and report on system caches" {
 
 	private function resetstats( event, rc, prc ) {
 		var params        = jsonRpc2Plugin.getRequestParams();
-		var cacheName     = params[ 2 ] ?: "";
-		var cachesToClear = cacheName.listToArray( Trim( cacheName ) );
+		var cacheNames    = params.commandLineArgs[ 2 ] ?: "";
+		var cachesToClear = ListToArray( Trim( cacheNames ) );
 
-		if ( !cachesToClear.len() ) {
+		if ( !ArrayLen( cachesToClear ) ) {
 			cachesToClear = cachebox.getCacheNames();
 		}
 
 		for( var cacheName in cachesToClear ){
 			if ( cachebox.cacheExists( cacheName ) ) {
 				cachebox.getCache( cacheName ).getStats().clearStatistics();
+			}
+		}
+
+		return runEvent( event="admin.devtools.terminalCommands.cache.stats", private=true, prePostExempt=true );
+	}
+
+	private function clear( event, rc, prc ) {
+		var params        = jsonRpc2Plugin.getRequestParams();
+		var cacheNames    = params.commandLineArgs[ 2 ] ?: "";
+		var cachesToClear = ListToArray( Trim( cacheNames ) );
+
+		if ( !ArrayLen( cachesToClear ) ) {
+			return writeText( text="You must specify the name of a cache to clear]", type="info", bold=true, newline=true );
+		}
+
+		for( var cacheName in cachesToClear ){
+			if ( cachebox.cacheExists( cacheName ) ) {
+				cachebox.getCache( cacheName ).clearAll();
 			}
 		}
 

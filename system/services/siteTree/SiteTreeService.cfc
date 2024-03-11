@@ -17,6 +17,7 @@ component {
 	 * @websitePermissionService.inject    websitePermissionService
 	 * @rulesEngineConditionService.inject rulesEngineConditionService
 	 * @cloningService.inject              presideObjectCloningService
+	 * @cachebox.inject                    cachebox
 	 */
 	public any function init(
 		  required any loginService
@@ -29,6 +30,7 @@ component {
 		, required any websitePermissionService
 		, required any rulesEngineConditionService
 		, required any cloningService
+		, required any cachebox
 	) {
 		_setLoginService( arguments.loginService );
 		_setPageTypesService( arguments.pageTypesService );
@@ -40,6 +42,7 @@ component {
 		_setWebsitePermissionService( arguments.websitePermissionService );
 		_setRulesEngineConditionService( arguments.rulesEngineConditionService );
 		_setCloningService( arguments.cloningService );
+		_setCachebox( arguments.cachebox );
 		_setPageSlugsAreMultilingual();
 
 		if ( $isFeatureEnabled( "sitetree" ) ) {
@@ -377,9 +380,11 @@ component {
 		var args = "";
 
 		if ( page.recordCount ) {
+			var allowedPageTypes = _getPageTypesService().listSiteTreePageTypes();
+
 			args = {
-				  filter             = "_hierarchy_lineage like :_hierarchy_lineage"
-				, filterParams       = { _hierarchy_lineage = page._hierarchy_child_selector }
+				  filter             = "_hierarchy_lineage like :_hierarchy_lineage and page_type in ( :page_type )"
+				, filterParams       = { _hierarchy_lineage = page._hierarchy_child_selector, page_type = allowedPageTypes }
 				, orderBy            = "_hierarchy_sort_order"
 				, allowDraftVersions = arguments.allowDrafts
 			};
@@ -1352,6 +1357,33 @@ component {
 		return page.id ?: "";
 	}
 
+	public void function clearAllCaches() {
+		_getCachebox().clearAll();
+		$announceInterception( "onClearCaches", {} );
+	}
+
+	public void function clearPageCache( string pageId="", string pageUrl="" ) {
+		var pageUrl    = ReReplace( Len( arguments.pageId ) ? $getRequestContext().buildLink( page=arguments.pageId ) : arguments.pageUrl, "^https?://.*?/", "/" );
+		var sectionUrl = ReReplace( pageUrl, "\.html$", "/" );
+
+		if ( Len( pageUrl ) ) {
+			_getCachebox().getCache( "PresidePageCache" ).clearByKeySnippet( pageUrl );
+			_getCachebox().getCache( "PresidePageCache" ).clearByKeySnippet( sectionUrl );
+
+			$announceInterception( "onClearPageCaches", {
+				  pageUrl    = pageUrl
+				, sectionUrl = sectionUrl
+			} );
+		}
+	}
+
+	public void function clearPageTypeCaches( required array pageTypes=[] ) {
+		var pages = _getPObj().selectData( selectFields=[ "id" ], filter={ page_type=arguments.pageTypes } );
+
+		for ( var page in pages ) {
+			clearPageCache( pageId=page.id );
+		}
+	}
 
 // PRIVATE HELPERS
 	private numeric function _calculateSortOrder( string parent_page="", string site="" ) {
@@ -1802,6 +1834,13 @@ component {
 	}
 	private void function _setCloningService( required any cloningService ) {
 		_cloningService = arguments.cloningService;
+	}
+
+	private any function _getCachebox() {
+		return _cachebox;
+	}
+	private void function _setCachebox( required any cachebox ) {
+		_cachebox = arguments.cachebox;
 	}
 
 	private void function _setPageSlugsAreMultilingual() {

@@ -8,8 +8,10 @@
 component {
 
 	variables._operationsCache = {};
+	variables.UNKNOWN_TOTAL = 1000000001; // a hardcoded magic number to communicate pagination unknown
 
 	property name="dataManagerDefaults" inject="coldbox:setting:dataManager.defaults";
+	property name="rowCountTimeout"     inject="coldbox:setting:queryTimeout.datamanagerRowCount";
 
 // CONSTRUCTOR
 
@@ -260,7 +262,7 @@ component {
 	}
 
 	public string function getDefaultOperationsForObject( required string objectName ) {
-		var defaults = [ "read", "add", "edit", "batchedit", "delete", "batchdelete" ];
+		var defaults = [ "navigate", "read", "add", "edit", "batchedit", "delete", "batchdelete" ];
 
 		if ( _getPresideObjectService().objectIsVersioned( arguments.objectName ) ) {
 			defaults.append( "viewversions" );
@@ -492,7 +494,28 @@ component {
 		} else if ( dbAdapter.supportsCountOverWindowFunction() ) {
 			result.totalRecords = result.records.recordCount ? result.records._total_recordcount : 0;
 		} else {
-			result.totalRecords = _getPresideObjectService().selectData( argumentCollection=args, recordCountOnly=true, maxRows=0, startRow=1 );
+			try {
+				if ( Len( args.groupBy ?: "" ) ) {
+					result.totalRecords = _getPresideObjectService().selectData(
+						  argumentCollection = args
+						, recordCountOnly    = true
+						, maxRows            = 0
+						, startRow           = 1
+						, timeout            = rowCountTimeout
+					);
+				} else {
+					result.totalRecords = _getPresideObjectService().selectData(
+						  argumentCollection = args
+						, selectFields       = []
+						, recordCountOnly    = true
+						, maxRows            = 0
+						, startRow           = 1
+						, timeout            = rowCountTimeout
+					);
+				}
+			} catch( database e ) {
+				result.totalRecords = UNKNOWN_TOTAL;
+			}
 		}
 
 		return result;
@@ -939,6 +962,7 @@ component {
 		var labelFieldIsRelationship = ( props[ labelField ].relationship ?: "" ) contains "-to-";
 		var replacedLabelField       = !Find( ".", labelField ) ? "#objName#.${labelfield} as #ListLast( labelField, '.' )#" : "${labelfield} as #labelField#";
 		var objectHasIdField         = booleanFormat( len( trim( _getPresideObjectService().getIdField( objectName=arguments.objectName ) ) ) );
+		var additionalFields         = [];
 
 		if ( objectHasIdField ) {
 			sqlFields.delete( "id" );
@@ -996,6 +1020,7 @@ component {
 
 				case "many-to-one":
 					sqlFields[i] = ( prop.name ?: "" ) & ".${labelfield} as " & field;
+					ArrayAppend( additionalFields, "#field# as __raw_#field#" );
 				break;
 
 				default:
@@ -1006,6 +1031,8 @@ component {
 				sqlFields.append( objName & "._version_number" );
 			}
 		}
+
+		ArrayAppend( sqlFields, additionalFields, true )
 
 		return sqlFields;
 	}
