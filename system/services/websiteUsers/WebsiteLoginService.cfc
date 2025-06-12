@@ -3,9 +3,10 @@
  * \n
  * See also: [[websiteusersandpermissioning]]
  *
- * @singleton
- * @presideservice
- * @autodoc
+ * @singleton      true
+ * @presideservice true
+ * @autodoc        true
+ * @feature        websiteUsers
  */
 component displayName="Website login service" {
 
@@ -86,6 +87,21 @@ component displayName="Website login service" {
 		}
 
 		return false;
+	}
+
+	/**
+	 * For background threads, allows the thread to assume that a specific user is logged in
+	 *
+	 */
+	public function spoofUserLoginInBgThread( required string userId ) {
+		var user = _getUserDao().selectData(
+			  filter   = { id=arguments.userId, active=true }
+			, useCache = false
+		);
+
+		if ( user.recordCount ) {
+			request._bgThreadUser = $helpers.queryRowToStruct( user );
+		}
 	}
 
 	/**
@@ -204,6 +220,9 @@ component displayName="Website login service" {
 	 * If no user is logged in, an empty structure will be returned.
 	 */
 	public struct function getLoggedInUserDetails() autodoc=true {
+		if ( $getRequestContext().isBackgroundThread() ) {
+			return request._bgThreadUser ?: {};
+		}
 		var userDetails = _getSessionStorage().getVar( name=_getSessionKey(), default={} );
 
 		return !IsNull( local.userDetails ) && IsStruct( userDetails ) ? userDetails : {};

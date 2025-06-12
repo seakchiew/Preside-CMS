@@ -43,6 +43,7 @@ component {
 		__setupFullPageCaching();
 		__setupHeartbeatsAndServices();
 		__setupNotifications();
+		__setupIgnoreFile();
 		__loadConfigurationFromExtensions();
 	}
 
@@ -53,6 +54,11 @@ component {
 
 		settings.features[ "devtools.new"       ].enabled = true;
 		settings.features[ "devtools.extension" ].enabled = true;
+
+		settings.ignoreFile.read  = false;
+		settings.ignoreFile.write = true;
+
+		settings.environmentBannerConfig = { icon="fa-code", cssClass="alert-info" };
 	}
 
 // SPECIFIC AREAS
@@ -92,7 +98,8 @@ component {
 			local = "^local\.,\.local(:[0-9]+)?$,^localhost(:[0-9]+)?$,^127.0.0.1(:[0-9]+)?$"
 		};
 
-		settings.environmentMessage = "";
+		settings.environmentMessage      = "";
+		settings.environmentBannerConfig = { icon="fa-desktop", cssClass="alert-danger", display=false };
 	}
 
 	private void function __setupColdbox() {
@@ -113,7 +120,7 @@ component {
 			, pluginsExternalLocation   = "preside.system.plugins"
 			, viewsExternalLocation     = "/preside/system/views"
 			, layoutsExternalLocation   = "/preside/system/layouts"
-			, modulesExternalLocation   = [ "/app/extensions", "/preside/system/modules" ]
+			, modulesExternalLocation   = [ "/app/extensions_app", "/app/extensions", "/preside/system/modules" ]
 			, handlersExternalLocation  = "preside.system.handlers"
 			, applicationStartHandler   = "General.applicationStart"
 			, applicationEndHandler     = "General.applicationEnd"
@@ -256,6 +263,10 @@ component {
 		interceptorSettings.customInterceptionPoints.append( "postPrepareEmailMessage"               );
 		interceptorSettings.customInterceptionPoints.append( "preRenderEmailLayout"                  );
 		interceptorSettings.customInterceptionPoints.append( "postRenderEmailLayout"                 );
+		interceptorSettings.customInterceptionPoints.append( "prePrepareEmailParameters"             );
+		interceptorSettings.customInterceptionPoints.append( "postPrepareEmailParameters"            );
+		interceptorSettings.customInterceptionPoints.append( "prePrepareEmailPreviewParameters"      );
+		interceptorSettings.customInterceptionPoints.append( "postPrepareEmailPreviewParameters"     );
 		interceptorSettings.customInterceptionPoints.append( "preRenderContent"                      );
 		interceptorSettings.customInterceptionPoints.append( "postRenderContent"                     );
 		interceptorSettings.customInterceptionPoints.append( "onGenerateEmailUnsubscribeLink"        );
@@ -279,6 +290,7 @@ component {
 		interceptorSettings.customInterceptionPoints.append( "postGetExtraEditRecordActionButtons"   );
 		interceptorSettings.customInterceptionPoints.append( "postExtraTopRightButtonsForEditRecord" );
 		interceptorSettings.customInterceptionPoints.append( "postGetExtraCloneRecordActionButtons"  );
+		interceptorSettings.customInterceptionPoints.append( "postGetExtraSortRecordsActionButtons"  );
 		interceptorSettings.customInterceptionPoints.append( "postExtraTopRightButtons"              );
 		interceptorSettings.customInterceptionPoints.append( "preValidateForm"		                 );
 		interceptorSettings.customInterceptionPoints.append( "preRenderLabelSelectData"		         );
@@ -290,6 +302,10 @@ component {
 		interceptorSettings.customInterceptionPoints.append( "preRenderDataManagerObjectTabs"        );
 		interceptorSettings.customInterceptionPoints.append( "postPrepareDevToolsVersions"           );
 		interceptorSettings.customInterceptionPoints.append( "postRenderDelayedViewlets"             );
+		interceptorSettings.customInterceptionPoints.append( "preRunCustomization"                   );
+		interceptorSettings.customInterceptionPoints.append( "postRunCustomization"                  );
+		interceptorSettings.customInterceptionPoints.append( "onEmailTemplateGetAdditionalQueryStringForBuildAjaxListingLink" );
+		interceptorSettings.customInterceptionPoints.append( "onEmailTemplatePreFetchRecordsForGridListing" );
 	}
 
 	private void function __setupCachebox() {
@@ -558,11 +574,13 @@ component {
 			, icon          = "fa-link"
 			, title         = "cms:links.navigation.link"
 			, permissionKey = "presideobject.link.read"
+			, feature       = "cms"
 		};
 		settings.adminMenuItems.maintenanceMode = {
 			  permissionKey = "maintenanceMode.configure"
 			, buildLinkArgs = { linkTo="maintenanceMode" }
 			, activeChecks  = { handlerPatterns="^admin\.maintenanceMode\." }
+			, feature       = "maintenanceMode"
 			, icon          = "fa-medkit"
 			, title         = "cms:maintenanceMode"
 		};
@@ -621,9 +639,10 @@ component {
 			, title         = "cms:taskmanager"
 		};
 		settings.adminMenuItems.urlRedirects = {
-			  permissionKey = "urlRedirects.navigate"
-			, buildLinkArgs = { linkTo="urlRedirects" }
-			, activeChecks  = { handlerPatterns="^admin\.urlRedirects\." }
+			  feature       = "urlRedirects"
+			, permissionKey = "urlRedirects.navigate"
+			, buildLinkArgs = { objectName="url_redirect_rule" }
+			, activeChecks  = { datamanagerObject="url_redirect_rule" }
 			, icon          = "fa-code-fork"
 			, title         = "cms:urlRedirects.navigation.link"
 		};
@@ -661,7 +680,7 @@ component {
 			, notifications          = [ "configure" ]
 			, maintenanceMode        = [ "configure" ]
 			, systemInformation      = [ "navigate" ]
-			, urlRedirects           = [ "navigate", "read", "addRule", "editRule", "deleteRule" ]
+			, urlRedirects           = [ "navigate", "read", "addRule", "editRule", "deleteRule", "batchdelete", "batchedit", "manageContextPerms", "viewversions", "clone", "managefilters", "usefilters" ]
 			, formbuilder            = [ "navigate", "addform", "editform", "deleteForm" ,"lockForm", "activateForm", "deleteSubmissions", "editformactions" ]
 			, formquestions          = [ "navigate", "read", "add", "edit", "delete", "batchdelete", "batchedit", "clone", "managefilters", "usefilters" ]
 			, taskmanager            = [ "navigate", "run", "toggleactive", "viewlogs", "configure" ]
@@ -684,6 +703,7 @@ component {
 			, presideobject          = {
 				  security_user  = [ "navigate", "read", "add", "edit", "delete", "viewversions" ]
 				, security_group = [ "navigate", "read", "add", "edit", "delete", "viewversions" ]
+				, system_alert   = [ "navigate", "read", "add", "edit", "delete", "viewversions" ]
 				, page           = [ "navigate", "read", "add", "edit", "delete", "viewversions" ]
 				, site           = [ "navigate", "read", "add", "edit", "delete", "viewversions" ]
 				, asset          = [ "navigate", "read", "add", "edit", "delete", "viewversions" ]
@@ -700,7 +720,7 @@ component {
 
 		settings.adminRoles = StructNew( "linked" );
 
-		settings.adminRoles.sysadmin           = [ "cms.access", "usermanager.*", "groupmanager.*", "systemConfiguration.*", "presideobject.security_user.*", "presideobject.security_group.*", "websiteBenefitsManager.*", "websiteUserManager.*", "sites.*", "presideobject.links.*", "notifications.*", "passwordPolicyManager.*", "urlRedirects.*", "systemInformation.*", "taskmanager.navigate", "taskmanager.viewlogs", "auditTrail.*", "rulesEngine.*", "emailCenter.*", "!emailCenter.queue.*", "savedExport.*", "formbuilder.*", "formquestions.*" ];
+		settings.adminRoles.sysadmin           = [ "cms.access", "usermanager.*", "groupmanager.*", "systemConfiguration.*", "presideobject.system_alert.*", "presideobject.security_user.*", "presideobject.security_group.*", "websiteBenefitsManager.*", "websiteUserManager.*", "sites.*", "presideobject.links.*", "notifications.*", "passwordPolicyManager.*", "urlRedirects.*", "systemInformation.*", "taskmanager.navigate", "taskmanager.viewlogs", "auditTrail.*", "rulesEngine.*", "emailCenter.*", "!emailCenter.queue.*", "savedExport.*", "formbuilder.*", "formquestions.*" ];
 		settings.adminRoles.contentadmin       = [ "cms.access", "sites.*", "presideobject.site.*", "presideobject.link.*", "sitetree.*", "presideobject.page.*", "datamanager.*", "assetmanager.*", "presideobject.asset.*", "presideobject.asset_folder.*", "formbuilder.*", "formquestions.*", "!formbuilder.lockForm", "!formbuilder.activateForm", "!formbuilder.deleteForm", "rulesEngine.read", "emailCenter.*", "!emailCenter.queue.*" ];
 		settings.adminRoles.contenteditor      = [ "cms.access", "presideobject.link.*", "sites.navigate", "sitetree.*", "presideobject.page.*", "datamanager.*", "assetmanager.*", "presideobject.asset.*", "presideobject.asset_folder.*", "!*.delete", "!*.manageContextPerms", "!assetmanager.folders.add", "rulesEngine.read" ];
 		settings.adminRoles.formbuildermanager = [ "cms.access", "formbuilder.*", "formquestions.*" ];
@@ -735,6 +755,11 @@ component {
 		settings.autoRestoreDeprecatedFields = true;
 		settings.useQueryCacheDefault        = true;
 		settings.mssql = { useVarcharMaxForText = false }
+		settings.datasourceConnection = {
+			  retries      = Val( settings.env.DATASOURCE_CONNECTION_RETRIES     ?: 0   )
+			, retryPause   = Val( settings.env.DATASOURCE_CONNECTION_RETRY_PAUSE ?: 100 )
+			, failureRegex = settings.env.DATASOURCE_CONNECTION_FAILURE_REGEX ?: "Communications link failure"
+		};
 
 		settings.queryTimeout = {
 			  default                 = Val( settings.env.QUERY_TIMEOUT ?: 0 )
@@ -850,7 +875,7 @@ component {
 				, autoGrow_onStartup              = true
 				, emailProtection                 = 'encode'
 				, removePlugins                   = 'iframe,wsc,scayt'
-				, disallowedContent               = 'font; *[align]; *{line-height,margin*}'
+				, disallowedContent               = 'font; *[align,contenteditable]; *{line-height,margin*}'
 				, scayt_sLang                     = "en_GB"
 				, pasteFromWordDisallow           = [
 					  "span"  // Strip all span elements
@@ -880,59 +905,70 @@ component {
 
 	private void function __setupFeatures() {
 		settings.features = {
-			  cms                             = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, sitetree                        = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, sites                           = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, assetManager                    = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, websiteUsers                    = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, websiteBenefits                 = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, datamanager                     = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, batchOperationSelectAll         = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, useDistinctForDatatables        = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, systemConfiguration             = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, cmsUserManager                  = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, errorLogs                       = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, redirectErrorPages              = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
-			, auditTrail                      = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, systemInformation               = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, passwordPolicyManager           = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, formbuilder                     = { enabled=true , siteTemplates=[ "*" ], widgets=[ "formbuilderform" ] }
-			, formbuilder2                    = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
+			  admin                           = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, cms                             = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, presideForms                    = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, sitetree                        = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "cms"   ] }
+			, sites                           = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "cms"   ] }
+			, sticker                         = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, urlRedirects                    = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "cms" ] }
+			, taskManager                     = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, adhocTasks                      = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
+			, assetManager                    = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, websiteUsers                    = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "cms"   ] }
+			, websiteBenefits                 = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "websiteUsers" ] }
+			, datamanager                     = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, batchOperationSelectAll         = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, useDistinctForDatatables        = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, systemConfiguration             = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, cmsUserManager                  = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, errorLogs                       = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, redirectErrorPages              = { enabled=false, siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "cms"   ] }
+			, auditTrail                      = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, systemInformation               = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, passwordPolicyManager           = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, formbuilder                     = { enabled=true , siteTemplates=[ "*" ], widgets=[ "formbuilderform" ]   , dependsOn=[ "cms" ] }
+			, formbuilder2                    = { enabled=false, siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "formbuilder"   ] }
 			, multilingual                    = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
-			, dataexport                      = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
-			, dataExporterNDJSON              = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
-			, twoFactorAuthentication         = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, rulesEngine                     = { enabled=true , siteTemplates=[ "*" ], widgets=[ "conditionalContent" ] }
-			, emailCenter                     = { enabled=true , siteTemplates=[ "*" ] }
-			, emailCenterResend               = { enabled=false, siteTemplates=[ "*" ] }
-			, emailStyleInliner               = { enabled=true , siteTemplates=[ "*" ] }
-			, emailLinkShortener              = { enabled=true , siteTemplates=[ "*" ] }
-			, emailOverwriteDomain            = { enabled=false, siteTemplates=[ "*" ] }
-			, emailTrackingBotDetection       = { enabled=false, siteTemplates=[ "*" ] }
-			, customEmailTemplates            = { enabled=true , siteTemplates=[ "*" ] }
-			, apiManager                      = { enabled=false, siteTemplates=[ "*" ] }
-			, restTokenAuth                   = { enabled=false, siteTemplates=[ "*" ] }
-			, adminCsrfProtection             = { enabled=true , siteTemplates=[ "*" ] }
-			, fullPageCaching                 = { enabled=false, siteTemplates=[ "*" ] }
-			, fullPageCachingForLoggedInUsers = { enabled=false, siteTemplates=[ "*" ] }
+			, dataexport                      = { enabled=false, siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "datamanager"   ] }
+			, dataExporterNDJSON              = { enabled=false, siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "dataexport"   ] }
+			, twoFactorAuthentication         = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin"   ] }
+			, rulesEngine                     = { enabled=true , siteTemplates=[ "*" ], widgets=[ "conditionalContent" ], dependsOn=[ "datamanager" ] }
+			, emailCenter                     = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "admin" ]  }
+			, emailCenterResend               = { enabled=false, siteTemplates=[ "*" ]                                  , dependsOn=[ "emailCenter" ] }
+			, emailStyleInliner               = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "emailCenter" ] }
+			, emailLinkShortener              = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "emailCenter" ] }
+			, emailOverwriteDomain            = { enabled=false, siteTemplates=[ "*" ]                                  , dependsOn=[ "emailCenter" ] }
+			, emailTrackingBotDetection       = { enabled=false, siteTemplates=[ "*" ]                                  , dependsOn=[ "emailCenter" ] }
+			, customEmailTemplates            = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "emailCenter" ] }
+			, restFramework                   = { enabled=true , siteTemplates=[ "*" ] }
+			, apiManager                      = { enabled=false, siteTemplates=[ "*" ]                                  , dependsOn=[ "admin" ] }
+			, restTokenAuth                   = { enabled=false, siteTemplates=[ "*" ]                                  , dependsOn=[ "apiManager" ] }
+			, adminCsrfProtection             = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "admin" ] }
+			, fullPageCaching                 = { enabled=false, siteTemplates=[ "*" ]                                  , dependsOn=[ "cms" ] }
+			, fullPageCachingForLoggedInUsers = { enabled=false, siteTemplates=[ "*" ]                                  , dependsOn=[ "websiteUsers" ] }
+			, delayedViewlets                 = { enabled=true , siteTemplates=[ "*" ] }
 			, healthchecks                    = { enabled=true , siteTemplates=[ "*" ] }
-			, emailQueueHeartBeat             = { enabled=true , siteTemplates=[ "*" ] }
-			, adhocTaskHeartBeat              = { enabled=true , siteTemplates=[ "*" ] }
-			, taskmanagerHeartBeat            = { enabled=true , siteTemplates=[ "*" ] }
-			, systemAlertsHeartBeat           = { enabled=true , siteTemplates=[ "*" ] }
-			, scheduledExportHeartBeat        = { enabled=true , siteTemplates=[ "*" ] }
-			, segmentationFiltersHeartbeat    = { enabled=true , siteTemplates=[ "*" ] }
-			, assetQueueHeartBeat             = { enabled=true , siteTemplates=[ "*" ] }
-			, assetQueue                      = { enabled=false , siteTemplates=[ "*" ] }
+			, emailQueueHeartBeat             = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "customEmailTemplates" ] }
+			, adhocTaskHeartBeat              = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "adhocTasks" ] }
+			, taskmanagerHeartBeat            = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "taskManager" ] }
+			, systemAlertsHeartBeat           = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "admin" ] }
+			, scheduledExportHeartBeat        = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "dataexport"  ] }
+			, segmentationFiltersHeartbeat    = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "rulesEngine" ] }
+			, assetQueue                      = { enabled=false, siteTemplates=[ "*" ]                                  , dependsOn=[ "assetmanager" ] }
+			, assetQueueHeartBeat             = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "assetQueue" ] }
 			, queryCachePerObject             = { enabled=false, siteTemplates=[ "*" ] }
+			, presideBasicWorkflow            = { enabled=true, siteTemplates=[ "*" ] }
+			, dbLogAppender                   = { enabled=true, siteTemplates=[ "*" ] }
+			, maintenanceMode                 = { enabled=true, siteTemplates=[ "*" ]                                   , dependsOn=[ "admin" ] }
 			, sslInternalHttpCalls            = { enabled=_luceeGreaterThanFour(), siteTemplates=[ "*" ] }
 			, sslInternalHttpCalls            = { enabled=_luceeGreaterThanFour(), siteTemplates=[ "*" ] }
 			, presideSessionManagement        = { enabled=_usePresideSessionManagement(), siteTemplates=[ "*" ] }
-			, "devtools.reload"               = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, "devtools.cache"                = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, "devtools.extension"            = { enabled=true , siteTemplates=[ "*" ], widgets=[] }
-			, "devtools.new"                  = { enabled=false, siteTemplates=[ "*" ], widgets=[] }
-			, passwordVisibilityToggle        = { enabled=true , siteTemplates=[ "*" ] }
+			, "devtools.reload"               = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, "devtools.cache"                = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, "devtools.extension"            = { enabled=true , siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, "devtools.new"                  = { enabled=false, siteTemplates=[ "*" ], widgets=[]                      , dependsOn=[ "admin" ] }
+			, passwordVisibilityToggle        = { enabled=true , siteTemplates=[ "*" ]                                  , dependsOn=[ "admin" ] }
 		};
 	}
 
@@ -965,10 +1001,20 @@ component {
 		settings.enum.rulesEngineConditionType    = [ "condition", "filter" ];
 		settings.enum.dataExportExcelDataTypes    = [ "mapped", "string" ];
 		settings.enum.systemAlertLevel            = [ "critical", "warning", "advisory" ];
+		settings.enum.adminToolbarModes           = [ "fixed", "reveal", "none" ];
 	}
 
 	private void function __setupFormValidationProviders() {
-		settings.validationProviders = [ "presideObjectValidators", "passwordPolicyValidator", "recaptchaValidator", "rulesEngineConditionService", "enumService", "EmailCenterValidators" ];
+		settings.validationProviders = [];
+		settings.coreValidationProviders = [
+			  "presideObjectValidators"
+			, "passwordPolicyValidator"
+			, "recaptchaValidator"
+			, "rulesEngineConditionService"
+			, "enumService"
+			, "EmailCenterValidators"
+			, "FormbuilderValidators"
+		];
 	}
 
 	private void function __setupStaticAssetConfiguration() {
@@ -1022,7 +1068,7 @@ component {
 		settings.rulesEngine.contexts.webrequest            = { subcontexts=[ "user", "page", "adminuser" ] };
 		settings.rulesEngine.contexts.page                  = { feature="sitetree", object="page" };
 		settings.rulesEngine.contexts.user                  = { feature="websiteUsers", object="website_user" };
-		settings.rulesEngine.contexts.adminuser             = { object="security_user" };
+		settings.rulesEngine.contexts.adminuser             = { feature="admin", object="security_user" };
 		settings.rulesEngine.contexts.formBuilderSubmission = { feature="formbuilder", subcontexts=[ "webrequest" ] };
 	}
 
@@ -1079,6 +1125,13 @@ component {
 
 		settings.heartbeats.taskmanager.poolSize  = Val( settings.env.TASKMANAGER_POOL_SIZE  ?: 0 );
 		settings.heartbeats.adhocTask.poolSize    = Val( settings.env.ADHOCTASK_POOL_SIZE    ?: 0 );
+
+		settings.heartbeats.adhocTask.staleTaskSettings = {
+			  lockedMinAgeInMinutes          = 5
+			, lockedMaxAgeInMinutes          = ( 7 * 24 * 60 ) // one week (i.e. ignore stale tasks over one week old to avoid restarting very old tasks with unexpected results)
+			, inactiveRunningMinAgeInMinutes = 360
+			, inactiveRunningMaxAgeInMinutes = ( 7 * 24 * 60 ) // one week (i.e. ignore stale tasks over one week old to avoid restarting very old tasks with unexpected results)
+		};
 	}
 
 	private void function __setupNotifications() {
@@ -1089,10 +1142,18 @@ component {
 		settings.devConsoleToggleKeyCode = 96;
 	}
 
+	private void function __setupIgnoreFile(){
+		settings.ignoreFile = {
+			  read  = true
+			, write = false
+			, path  = ExpandPath( "/.presideignore.json" )
+		};
+	}
+
 	private void function __loadConfigurationFromExtensions() {
 		for( var ext in settings.activeExtensions ){
 			if ( FileExists( ext.directory & "/config/Config.cfc" ) ) {
-				var cfcPath = ReReplace( ListChangeDelims( ext.directory & "/config/Config", ".", "/" ), "^\.", "" );
+				var cfcPath = ext.componentPath & ".config.Config";
 
 				CreateObject( cfcPath ).configure( config=variables );
 			}
@@ -1333,6 +1394,7 @@ component {
 			  spacer  = { isFormField=false }
 			, content = { isFormField=false }
 			, section = { isFormField=false }
+			, page    = { isFormField=false }
 		} };
 
 		fbSettings.actions = [
@@ -1351,17 +1413,17 @@ component {
 		var recipientTypes   = {};
 		var serviceProviders = {};
 
-		templates.cmsWelcome = { feature="cms", group="presideadmin", recipientType="adminUser", parameters=[
+		templates.cmsWelcome = { feature="admin", group="presideadmin", recipientType="adminUser", parameters=[
 			  { id="reset_password_link", required=true }
 			, { id="welcome_message", required=true }
 			, "created_by"
 			, "site_url"
 		] };
-		templates.resetCmsPassword = { feature="cms", group="presideadmin", recipientType="adminUser", saveContent=false, parameters=[
+		templates.resetCmsPassword = { feature="admin", group="presideadmin", recipientType="adminUser", saveContent=false, parameters=[
 			  { id="reset_password_link", required=true }
 			, "site_url"
 		] };
-		templates.resetCmsPasswordForTokenExpiry = { feature="cms", group="presideadmin", recipientType="adminUser", saveContent=false, parameters=[
+		templates.resetCmsPasswordForTokenExpiry = { feature="admin", group="presideadmin", recipientType="adminUser", saveContent=false, parameters=[
 			  { id="reset_password_link", required=true }
 			, "site_url"
 		] };
@@ -1370,7 +1432,7 @@ component {
 			, { id="submission_preview"  , required=true }
 			, { id="notification_subject", required=false }
 		] };
-		templates.notification = { feature="cms", group="presideadmin", recipientType="adminUser", saveContent=false, parameters=[
+		templates.notification = { feature="admin", group="presideadmin", recipientType="adminUser", saveContent=false, parameters=[
 			  { id="admin_link"          , required=true  }
 			, { id="notification_body"   , required=true  }
 			, { id="notification_subject", required=false }
@@ -1393,7 +1455,7 @@ component {
 			  { id="reset_password_link", required=true }
 			, "site_url"
 		] };
-		templates.resetTwoFactorAuthentication = { feature="cms", group="presideadmin", recipientType="adminUser", saveContent=false, parameters=[
+		templates.resetTwoFactorAuthentication = { feature="admin", group="presideadmin", recipientType="adminUser", saveContent=false, parameters=[
 			  "site_url"
 			, "site_admin_url"
 		] };
@@ -1404,7 +1466,7 @@ component {
 			, filterObject           = "security_user"
 			, gridFields             = [ "known_as", "email_address" ]
 			, recipientIdLogProperty = "security_user_recipient"
-			, feature                = "cms"
+			, feature                = "admin"
 		};
 		recipientTypes.websiteUser = {
 			  parameters             = [ "display_name", "login_id", "email_address" ]

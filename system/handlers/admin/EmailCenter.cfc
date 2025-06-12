@@ -1,6 +1,7 @@
 /**
  * Global actions/viewlets for email center functionality
  *
+ * @feature admin and emailCenter
  */
 component extends="preside.system.base.AdminHandler" {
 
@@ -143,6 +144,10 @@ component extends="preside.system.base.AdminHandler" {
 			, unsubscribes = "unsubscribed_date"
 			, complaints   = "marked_as_spam_date"
 		};
+
+		if ( StructIsEmpty( template ) ) {
+			template = emailTemplateService.getTemplate( id=templateId, allowDrafts=true );
+		}
 
 		prc.emailRecipientTypeObject = emailRecipientTypeService.getFilterObjectForRecipientType( template.recipient_type );
 		prc.emailRecipientTypeFk = emailRecipientTypeService.getRecipientIdLogPropertyForRecipientType( template.recipient_type );

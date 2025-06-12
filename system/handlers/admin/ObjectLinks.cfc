@@ -2,6 +2,7 @@
  * Handler that provides default actions for building links to admin object
  * screens.
  *
+ * @feature admin
  */
 component {
 
@@ -31,6 +32,10 @@ component {
 			}
 			if ( Val( version ) || version.len() ) {
 				queryString &= "&version=#version#";
+			}
+
+			if ( isTrue( args.modalView ?: "" ) ) {
+				queryString &= "&modalView=true";
 			}
 
 			return event.buildAdminLink(

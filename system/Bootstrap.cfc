@@ -114,6 +114,13 @@ component {
 			return application.cbBootstrap.onMissingTemplate( argumentCollection=arguments );
 		}
 	}
+	public function onMissingFunction( functionName, functionArguments ) {
+		if ( arguments.functionName == "testOnMissingFunctionAvailability" ) {
+			return true;
+		}
+
+		return application.presidehelperClass[ arguments.functionName ]( argumentCollection=functionArguments );
+	}
 
 	public void function onError(  required struct exception, required string eventName ) output=true {
 		if ( _dealWithSqlReloadProtectionErrors( arguments.exception ) ) {
@@ -242,7 +249,12 @@ component {
 		onApplicationEnd( application );
 		StructClear( application );
 		StructDelete( request, "cb_requestcontext" );
-		SystemCacheClear( "template" );
+
+		if ( StructKeyExists( getFunctionList(), "inspectTemplates" ) ) {
+			InspectTemplates();
+		} else {
+			SystemCacheClear( "template" );
+		}
 
 		if ( ( server.coldfusion.productName ?: "" ) == "Lucee" ) {
 			getPageContext().getCFMLFactory().resetPageContext();
@@ -262,6 +274,7 @@ component {
 		bootstrap.loadColdbox();
 
 		application.cbBootstrap = bootstrap;
+		application.presideHelperClass = bootstrap.getController().getWirebox().getInstance( "presideHelperClass" );
 	}
 
 	private boolean function _reloadRequired() {
@@ -636,7 +649,7 @@ component {
 		var cleanedCookies    = [];
 		var anyCookiesChanged = false;
 		var site              = cbController.getRequestContext().getSite();
-		var isSecure          = ( site.protocol ?: "http" ) == "https";
+		var isSecure          = cbController.getSetting( "forcessl" ) || ( site.protocol ?: "http" ) == "https";
 
 		for( var cooky in allCookies ) {
 			if ( !Len( Trim( cooky ) ) ) {
@@ -662,6 +675,8 @@ component {
 				cooky = ListAppend( cooky, "SameSite=#sameSitePolicy#", ";" );
 				anyCookiesChanged = true;
 			}
+
+			cooky = ReReplaceNoCase( cooky, "(Expires=[^;]+)UTC;", "\1GMT;" );
 
 			cleanedCookies.append( cooky );
 		}

@@ -1,3 +1,4 @@
+<!---@feature presideForms--->
 <cfscript>
 	inputName      = args.name         ?: "";
 	inputId        = args.id           ?: "";
@@ -7,6 +8,9 @@
 	futureOnly     = IsTrue( args.futureOnly ?: "" );
 	isDate         = IsTrue( args.isDate     ?: "" );
 	datePickerType = isDate ? "datePicker" : "dateTimePicker";
+
+	minDate = futureOnly ? now() : "";
+	maxDate = pastOnly   ? now() : "";
 
 	value = event.getValue( name=inputName, defaultValue=defaultValue );
 	if ( !IsSimpleValue( value ) ) {
@@ -58,6 +62,8 @@
 			, savedValue   = timePeriod.date1 ?: ""
 			, defaultValue = timePeriod.date1 ?: ""
 			, layout       = ""
+			, minDate      = minDate
+			, maxDate      = maxDate 
 		)#
 
 		#renderFormControl(
@@ -67,6 +73,8 @@
 			, savedValue   = timePeriod.date2 ?: ""
 			, defaultValue = timePeriod.date2 ?: ""
 			, layout       = ""
+			, minDate      = minDate
+			, maxDate      = maxDate 
 		)#
 	</div>
 </cfoutput>

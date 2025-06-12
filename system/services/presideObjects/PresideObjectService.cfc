@@ -228,6 +228,14 @@ component displayName="Preside Object Service" {
 			}
 		}
 
+		args.savedFilterList = [];
+
+		var filterService = _getFilterService();
+
+		for( var savedFilter in args.savedFilters ){
+			ArrayAppend( args.savedFilterList, filterService.getFilter( savedFilter ) );
+		}
+
 		args.extraFilters.append( _expandSavedFilters( argumentCollection=args ), true );
 
 		if ( args.useCache ) {
@@ -270,7 +278,7 @@ component displayName="Preside Object Service" {
 
 		args.adapter     = adapter;
 		args.objMeta     = objMeta;
-		args.orderBy     = arguments.recordCountOnly ? "" : _parseOrderBy( args.orderBy, args.objectName, args.adapter, args.filterParams, args.extraJoins );
+		args.orderBy     = arguments.recordCountOnly ? "" : _parseOrderBy( args.orderBy, args.objectName, args.adapter, args.filterParams, args.extraJoins, args.selectFields );
 		args.groupBy     = _autoPrefixBareProperty( args.objectName, args.groupBy, args.adapter );
 		if ( !Len( Trim( args.groupBy ) ) && args.autoGroupBy ) {
 			args.groupBy = _autoCalculateGroupBy( args.selectFields, args.objectName, args.adapter );
@@ -448,6 +456,8 @@ component displayName="Preside Object Service" {
 			return sqlAndParams;
 		}
 
+		var obfuscations = _getObfuscationsInSql( sqlAndParams.sql );
+
 		for( param in sqlAndParams.params ) {
 			if ( IsStruct( param ) ) {
 				key        = param.name;
@@ -459,9 +469,72 @@ component displayName="Preside Object Service" {
 			}
 
 			sqlAndParams.sql = ReReplaceNoCase( sqlAndParams.sql, ":#key#(\b)", ":#arguments.prefix##key#\1", "all" );
+
+			for ( var obfuscation in obfuscations ) {
+				_applyPrefixToObfuscatedSql( obfuscation=obfuscation, prefix=arguments.prefix, key=key );
+			}
+		}
+
+		for ( var obfuscation in obfuscations ) {
+			_applyNewObfuscatedSql( obfuscation );
+
+			sqlAndParams.sql = ReReplaceNoCase(
+				  sqlAndParams.sql
+				, obfuscation.encoded
+				, _getSqlRunner().obfuscateSqlForPreside( obfuscation.decoded )
+				, "all"
+			);
 		}
 
 		return sqlAndParams;
+	}
+
+	private array function _getObfuscationsInSql(
+		  required string sql
+	) {
+		var obfuscations = [];
+		var obfsPattern  = "{{base64:([A-Za-z0-9\+\/=]+)}}";
+		var matches      = ReFindNoCase( obfsPattern, arguments.sql, 1, true, "all" );
+
+		for ( var matched in matches ) {
+			if ( !Len( matched.match[1] ) ) {
+				continue;
+			}
+
+			var decoded = ToString( ToBinary( ReReplace( matched.match[1], obfsPattern, "\1" ) ) );
+			ArrayAppend( obfuscations, {
+				  encoded      = matched.match[1]
+				, decoded      = decoded
+				, obfuscations = _getObfuscationsInSql( decoded )
+			} );
+		}
+
+		return obfuscations;
+	}
+
+	private void function _applyPrefixToObfuscatedSql(
+		  required struct obfuscation
+		, required string prefix
+		, required string key
+	) {
+		arguments.obfuscation.decoded = ReReplaceNoCase( arguments.obfuscation.decoded, ":#key#(\b)", ":#arguments.prefix##arguments.key#\1", "all" );
+
+		for ( var subObfuscation in arguments.obfuscation.obfuscations ?: [] ) {
+			_applyPrefixToObfuscatedSql( obfuscation=subObfuscation, prefix=arguments.prefix, key=arguments.key );
+		}
+	}
+
+	private void function _applyNewObfuscatedSql( required struct obfuscation ) {
+		for ( var subObfuscation in arguments.obfuscation.obfuscations ) {
+			_applyNewObfuscatedSql( subObfuscation );
+
+			arguments.obfuscation.decoded = ReReplaceNoCase(
+				  arguments.obfuscation.decoded
+				, subObfuscation.encoded
+				, _getSqlRunner().obfuscateSqlForPreside( subObfuscation.decoded )
+				, "all"
+			);
+		}
 	}
 
 	private function _formatParams( required array rawParams ) {
@@ -1273,7 +1346,7 @@ component displayName="Preside Object Service" {
 
 		if ( Len( Trim( pivotTable ) ) and Len( Trim( targetObject ) ) ) {
 			var newRecords      = ListToArray( arguments.targetIdList );
-			var newAddedRecords = duplicate( newRecords );
+			var newAddedRecords = ListToArray( arguments.targetIdList );
 			var existingRecords = [];
 			var anythingChanged = false;
 			var sortOrderField  = getObjectAttribute( pivotTable, "datamanagerSortField", "sort_order" );
@@ -2496,7 +2569,7 @@ component displayName="Preside Object Service" {
 		, required string objectName
 	) {
 		var extraFilters = arguments.extraFilters;
-		var selectFields = Duplicate( arguments.selectFields );
+		var selectFields = _arrayCopy( arguments.selectFields );
 		var props        = getObjectProperties( arguments.objectName );
 		var labelField   = getLabelField( arguments.objectName );
 
@@ -2998,7 +3071,7 @@ component displayName="Preside Object Service" {
 		}
 
 		var key        = "";
-		var all        = Duplicate( arguments.data );
+		var all        = _deepishDuplicate( arguments.data );
 		var fieldRegex = _getAlaisedFieldRegex();
 		var entities   = _getEntityNames();
 		var field      = "";
@@ -3319,10 +3392,10 @@ component displayName="Preside Object Service" {
 
 	private array function _convertObjectJoinsToTableJoins(
 		  required array  joins
-		,          array  extraJoins   = []
-		,          array  extraFilters = []
-		,          array  savedFilters = []
-		,          struct preparedFilter = {}
+		,          array  extraJoins      = []
+		,          array  extraFilters    = []
+		,          array  savedFilterList = []
+		,          struct preparedFilter  = {}
 	) {
 		var tableJoins = [];
 		var objJoin    = "";
@@ -3365,9 +3438,7 @@ component displayName="Preside Object Service" {
 
 		tableJoins.append( arguments.extraJoins, true );
 
-		for( var savedFilter in arguments.savedFilters ){
-			savedFilter = _getFilterService().getFilter( savedFilter );
-
+		for( var savedFilter in arguments.savedFilterList ){
 			if ( IsArray( savedFilter.extraJoins ?: "" ) ) {
 				tableJoins.append( savedFilter.extraJoins, true );
 			}
@@ -3447,8 +3518,20 @@ component displayName="Preside Object Service" {
 				, joinToTable    = joinToTable
 				, joinToColumn   = joinToColumn
 				, type           = "left"
+				, aggJoinFor     = alias
 			} );
 		}
+	}
+
+	private boolean function _aggJoinExists( joins, propertyName, dbAdapter ) {
+		var escapedPropName = arguments.dbAdapter.escapeEntity( arguments.propertyName );
+		for( var join in arguments.joins ) {
+			if ( StructKeyExists( join, "aggJoinFor" ) && ( join.aggJoinFor == escapedPropName || join.aggJoinFor == arguments.propertyName ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	private string function _optimiseAggregateFunctions( required string formula ) {
@@ -3480,8 +3563,8 @@ component displayName="Preside Object Service" {
 		var versionObj           = _getObject( getVersionObjectName( arguments.objectName ) ).meta;
 		var usesDrafts           = objectUsesDrafts( arguments.objectName );
 		var versionTableName     = versionObj.tableName;
-		var compiledSelectFields = Duplicate( arguments.selectFields );
-		var compiledFilter       = Duplicate( arguments.filter );
+		var compiledSelectFields = _arrayCopy( arguments.selectFields );
+		var compiledFilter       = IsStruct( arguments.filter ) ? _deepishDuplicate( arguments.filter ) : arguments.filter;
 		var sql                  = "";
 		var versionFilter        = "";
 		var args                 = {};
@@ -3497,7 +3580,7 @@ component displayName="Preside Object Service" {
 
 		if ( arguments.specificVersion ) {
 			versionFilter = "#arguments.objectName#._version_number = :#arguments.objectName#._version_number";
-			params.append( { name="#arguments.objectName#___version_number", value=arguments.specificVersion, type="cf_sql_int" } );
+			params.append( { name="#arguments.objectName#___version_number", value=arguments.specificVersion, type="cf_sql_bigint" } );
 
 			if ( !arguments.allowDraftVersions && usesDrafts ) {
 				versionFilter &= " and ( #arguments.objectName#._version_is_draft is null or #arguments.objectName#._version_is_draft = :#arguments.objectName#._version_is_draft )";
@@ -3616,7 +3699,7 @@ component displayName="Preside Object Service" {
 	}
 
 	private array function _arrayMerge( required array arrayA, required array arrayB ) {
-		var newArray = Duplicate( arguments.arrayA );
+		var newArray = _arrayCopy( arguments.arrayA );
 		var node     = "";
 
 		for( node in arguments.arrayB ){
@@ -3719,8 +3802,8 @@ component displayName="Preside Object Service" {
 		return REReplaceNoCase( Trim( text ), '\bas\b\s+(\w+)(?!\s*[`\"\[])$', "as #dbAdapter.escapeEntity( "\1" )#" );
 	}
 
-	private string function _parseOrderBy( required string orderBy, required string objectName, required any dbAdapter, required struct filterParams, required array extraJoins ) {
-		var items         = arguments.orderBy.listToArray();
+	private string function _parseOrderBy( required string orderBy, required string objectName, required any dbAdapter, required struct filterParams, required array extraJoins, required array selectFields ) {
+		var items         = ListToArray( arguments.orderBy );
 		var rebuilt       = [];
 		var aliased       = "";
 		var propertyName  = "";
@@ -3732,22 +3815,28 @@ component displayName="Preside Object Service" {
 			direction    = ListLen( item, " " ) > 1 ? " " & ListRest( item, " ") : "";
 
 			if ( left( propertyName, 4 ) == "agg:" ) {
-				aggregateArgs = {
-					  selectFields = [ "#propertyName# as _placeholder" ]
-					, objectName   = arguments.objectName
-					, filterParams = arguments.filterParams
-					, extraJoins   = arguments.extraJoins
-				};
-				_prepareAggregateFormulaFields( aggregateArgs );
+				var rawPropName = Trim( ListFirst( item, " " ) );
 
-				propertyName = ReReplaceNoCase( aggregateArgs.selectFields[ 1 ], " as _placeholder$", "" );
-				item         = propertyName & direction;
+				if ( _aggJoinExists( arguments.extraJoins, rawPropName, dbAdapter ) ) {
+					item = rawPropName & direction;
+				} else {
+					aggregateArgs = {
+						  selectFields = [ "#propertyName# as _placeholder" ]
+						, objectName   = arguments.objectName
+						, filterParams = arguments.filterParams
+						, extraJoins   = arguments.extraJoins
+					};
+					_prepareAggregateFormulaFields( aggregateArgs );
+					propertyName = ReReplaceNoCase( aggregateArgs.selectFields[ 1 ], " as _placeholder$", "" );
+					item = propertyName & direction;
+				}
+
 			} else {
 				aliased = _autoPrefixBareProperty( arguments.objectName, propertyName, arguments.dbAdapter );
 				item    = aliased & direction;
 			}
 
-			rebuilt.append( Trim( item ) );
+			ArrayAppend( rebuilt, Trim( item ) );
 		}
 
 		return rebuilt.toList( ", " );
@@ -3767,13 +3856,10 @@ component displayName="Preside Object Service" {
 		return _relationshipPathCalcCache[ cacheKey ];
 	}
 
-	private array function _expandSavedFilters( required array savedFilters ) {
+	private array function _expandSavedFilters( required array savedFilterList ) {
 		var expanded      = [];
-		var filterService = _getFilterService();
 
-		for( var savedFilter in arguments.savedFilters ){
-			savedFilter = filterService.getFilter( savedFilter );
-
+		for( var savedFilter in arguments.savedFilterList ){
 			expanded.append({
 				  filter       = savedFilter.filter       ?: {}
 				, filterParams = savedFilter.filterParams ?: {}
@@ -3817,12 +3903,12 @@ component displayName="Preside Object Service" {
 
 		var idField = getIdField( arguments.objectName );
 		var result = {
-			  filter       = StructKeyExists( arguments, "id" ) ? { "#idField#" = arguments.id } : Duplicate( arguments.filter )
-			, filterParams = Duplicate( arguments.filterParams )
-			, having       = Duplicate( arguments.having )
+			  filter       = StructKeyExists( arguments, "id" ) ? { "#idField#" = arguments.id } : ( IsStruct( arguments.filter ) ? _deepishDuplicate( arguments.filter ) : arguments.filter )
+			, filterParams = _deepishDuplicate( arguments.filterParams )
+			, having       = arguments.having
 		};
 		if ( IsStruct( result.filter ) && ( arguments.extraFilters.len() || arguments.savedFilters.len() ) ) {
-			result.filterParams.append( Duplicate( result.filter ) );
+			StructAppend( result.filterParams, result.filter );
 		}
 
 		for( var extraFilter in arguments.extraFilters ){
@@ -3909,7 +3995,7 @@ component displayName="Preside Object Service" {
 
 	private struct function _addDefaultValuesToDataSet( required string objectName, required struct data ) {
 		var props   = getObjectProperties( arguments.objectName );
-		var newData = Duplicate( arguments.data );
+		var newData = _deepishDuplicate( arguments.data );
 
 		for( var propName in props ){
 			if ( !StructKeyExists( arguments.data, propName ) && Len( Trim( props[ propName ].default ?: "" ) ) ) {
@@ -3939,7 +4025,7 @@ component displayName="Preside Object Service" {
 	private struct function _addGeneratedValues( required string operation, required string objectName, required struct data, string id="" ) {
 		var obj       = getObject( arguments.objectName );
 		var props     = getObjectProperties( arguments.objectName );
-		var newData   = Duplicate( arguments.data );
+		var newData   = _deepishDuplicate( arguments.data );
 		var generated = {};
 		var genOps    = arguments.operation == "insert" ? [ "insert", "always" ] : [ "always" ];
 
@@ -4078,7 +4164,7 @@ component displayName="Preside Object Service" {
 	}
 
 	private boolean function _isDraft( array extraFilters=[] ) {
-		var draftCheckFilters = Duplicate( arguments.extraFilters );
+		var draftCheckFilters = _arrayCopy( arguments.extraFilters );
 
 		draftCheckFilters.append( { filter={ _version_is_draft=true } } );
 
@@ -4240,14 +4326,32 @@ component displayName="Preside Object Service" {
 		for( var key in arguments.args ) {
 			if ( IsNull( arguments.args[ key ] ) ){
 				continue;
-			} else if ( IsStruct( arguments.args[ key ] ) || IsArray( arguments.args[ key ] ) ) {
-				newArgs[ key ] = Duplicate( arguments.args[ key ] );
+			} else if ( IsStruct( arguments.args[ key ] ) ) {
+				newArgs[ key ] = _deepishDuplicate( arguments.args[ key ] );
+			} else if ( IsArray( arguments.args[ key ] ) ) {
+				newArgs[ key ] = _arrayCopy( arguments.args[ key ] );
 			} else {
 				newArgs[ key ] = arguments.args[ key ];
 			}
 		}
 
 		return newArgs;
+	}
+
+	private function _arrayCopy( arr ) {
+		var cpy = [];
+
+		for ( var v in arr ) {
+			if ( IsStruct( v ) ) {
+				ArrayAppend( cpy, _deepishDuplicate( v ) );
+			} else if ( IsArray( v ) ) {
+				ArrayAppend( cpy, _arrayCopy( v ) );
+			} else {
+				ArrayAppend( cpy, v );
+			}
+		}
+
+		return cpy;
 	}
 
 	private boolean function _canFieldBeCounted( required string field ) {

@@ -2,7 +2,7 @@
  * @singleton      true
  * @presideService true
  * @autodoc        true
- *
+ * @feature        emailCenter
  */
 component {
 
@@ -24,7 +24,7 @@ component {
 	 * @emailSendingContextService.inject emailSendingContextService
 	 * @emailStyleInliner.inject          emailStyleInliner
 	 * @emailStatsService.inject          emailStatsService
-	 * @assetManagerService.inject        assetManagerService
+	 * @assetManagerService.inject        featureInjector:assetManager:assetManagerService
 	 * @emailSettings.inject              coldbox:setting:email
 	 * @templateCache.inject              cachebox:emailTemplateCache
 	 * @timeSeriesUtils.inject            timeSeriesUtils
@@ -430,8 +430,14 @@ component {
 	 * @autodoc true
 	 * @id.hint ID of the template to check
 	 */
-	public boolean function templateExists( required string id ) {
-		return $getPresideObject( "email_template" ).dataExists( id=arguments.id );
+	public boolean function templateExists( required string id ){
+		var cacheKey = "_emailTemplateExists#arguments.id#";
+
+		if ( !StructKeyExists( request, cacheKey ) ) {
+			request[ cacheKey ] = $getPresideObject( "email_template" ).dataExists( id=arguments.id, usecache=true );
+		}
+
+		return request[ cacheKey ];
 	}
 
 	/**
@@ -449,31 +455,50 @@ component {
 		,          numeric version           = 0
 		,          boolean fromVersionTable  = ( arguments.allowDrafts || arguments.version )
 		,          array   extraSelectFields = []
+		,          boolean useRequestCache   = true
 	){
-		var template = $getPresideObject( "email_template" ).selectData(
-			  id                 = arguments.id
-			, allowDraftVersions = arguments.allowDrafts
-			, fromversionTable   = arguments.fromVersionTable
-			, specificVersion    = arguments.version
-			, extraSelectFields  = arguments.extraSelectFields
-			, useCache           = false
-		);
-
-		for( var t in template ) {
-			if ( ( t.email_blueprint ?: "" ).len() ) {
-				var blueprint = $getPresideObject( "email_blueprint" ).selectData( id=t.email_blueprint );
-				if ( blueprint.recordCount ) {
-					t.layout           = blueprint.layout;
-					t.recipient_type   = blueprint.recipient_type;
-					t.blueprint_filter = blueprint.recipient_filter;
-					t.service_provider = blueprint.service_provider;
-				}
-			}
-
-			return t;
+		if ( arguments.useRequestCache ) {
+			var cacheKey = "_emailTemplate#Hash( SerializeJson( arguments ) )#";
 		}
 
-		return {};
+		if ( !arguments.useRequestCache || !StructKeyExists( request, cacheKey ) ) {
+			var template = $getPresideObject( "email_template" ).selectData(
+				  id                 = arguments.id
+				, allowDraftVersions = arguments.allowDrafts
+				, fromversionTable   = arguments.fromVersionTable
+				, specificVersion    = arguments.version
+				, extraSelectFields  = arguments.extraSelectFields
+				, useCache           = false
+			);
+
+			if ( !template.recordCount ) {
+				if ( arguments.useRequestCache ) {
+					request[ cacheKey ] = {};
+				}
+
+				return {};
+			}
+
+			for( var t in template ) {
+				if ( ( t.email_blueprint ?: "" ).len() ) {
+					var blueprint = $getPresideObject( "email_blueprint" ).selectData( id=t.email_blueprint );
+					if ( blueprint.recordCount ) {
+						t.layout           = blueprint.layout;
+						t.recipient_type   = blueprint.recipient_type;
+						t.blueprint_filter = blueprint.recipient_filter;
+						t.service_provider = blueprint.service_provider;
+					}
+				}
+
+				if ( arguments.useRequestCache ) {
+					request[ cacheKey ] = t;
+				}
+
+				return t;
+			}
+		}
+
+		return arguments.useRequestCache ? request[ cacheKey ] : {};
 	}
 
 	/**
@@ -569,6 +594,8 @@ component {
 		,          array  styles = []
 		,          array  detectedParams
 	) {
+		$announceInterception( "prePrepareEmailParameters", arguments );
+
 		var anythingToDo = !StructKeyExists( arguments, "detectedParams" ) || ArrayLen( arguments.detectedParams );
 		if ( !anythingToDo ) {
 			return {};
@@ -599,6 +626,8 @@ component {
 			}
 		}
 
+		$announceInterception( "postPrepareEmailParameters", params );
+
 		return params;
 	}
 
@@ -614,6 +643,8 @@ component {
 		  required string template
 		, required string recipientType
 	) {
+		$announceInterception( "prePrepareEmailPreviewParameters", arguments );
+
 		var params = _getEmailRecipientTypeService().getPreviewParameters(
 			recipientType = arguments.recipientType
 		);
@@ -622,6 +653,8 @@ component {
 				template = arguments.template
 			) );
 		}
+
+		$announceInterception( "postPrepareEmailPreviewParameters", params );
 
 		return params;
 	}
@@ -659,7 +692,13 @@ component {
 	 * @markAsSent.hint Whether or not to mark a 'fixedschedule' template as sent
 	 */
 	public string function updateScheduledSendFields( required string templateId, boolean markAsSent=false ) {
-		var template    = getTemplate( id=arguments.templateId, allowDrafts=true, fromVersionTable=false );
+		var template    = getTemplate(
+			  id               = arguments.templateId
+			, allowDrafts      = true
+			, fromVersionTable = false
+			, useRequestCache  = false
+		);
+
 		var updatedData = { schedule_next_send_date = "" };
 
 		if ( template.sending_method == "scheduled" ) {
@@ -709,18 +748,21 @@ component {
 		return saveTemplate( id=arguments.templateId, template=updatedData, isDraft=( template._version_is_draft ?: false ) );
 	}
 
-/**
+	/**
 	 * Update the date of last email sent
 	 *
 	 * @autodoc           true
 	 * @templateId.hint   ID of the template to update
 	 * @lastSentDate.hint The date of last sent
 	 */
-	public string function updateLastSentDate(
+	public any function updateLastSentDate(
 		  required string templateId
-		, required string lastSentDate
+		, required any    lastSentDate
 	) {
-		return saveTemplate( id=arguments.templateId, template={ last_sent_date=arguments.lastSentDate } );
+		return $getPresideObject( "email_template" ).updateData(
+			  id      = arguments.templateId
+			, data    = { last_sent_date=arguments.lastSentDate }
+		);
 	}
 
 	/**
@@ -775,6 +817,10 @@ component {
 		,          boolean allowDrafts      = false
 		,          boolean fromVersionTable = arguments.allowDrafts
   	) {
+  		if ( !$isFeatureEnabled( "assetManager" ) ) {
+  			return [];
+  		}
+
 		var assetManagerService = _getAssetManagerService()
 		var attachments         = [];
 		var assets              = $getPresideObject( "email_template" ).selectData(
@@ -1151,7 +1197,7 @@ component {
 			, delivered = timeSeriesUtils.getTimeSeriesData( argumentCollection=commonArgs, timeField="delivered_date"                              , extraFilters=[ { filter={ email_template=arguments.templateId, delivered=true } } ] )
 			, failed    = timeSeriesUtils.getTimeSeriesData( argumentCollection=commonArgs, timeField="failed_date"                                 , extraFilters=[ { filter={ email_template=arguments.templateId, failed=true    } } ] )
 			, opened    = timeSeriesUtils.getTimeSeriesData( argumentCollection=commonArgs, timeField="opened_date"                                 , extraFilters=[ { filter={ email_template=arguments.templateId, opened=true    } } ] )
-			, clicks    = timeSeriesUtils.getTimeSeriesData( argumentCollection=commonArgs, timeField="email_template_send_log_activity.datecreated", extraFilters=[ { filter={ "message.email_template"=arguments.templateId       } } ], sourceObject="email_template_send_log_activity" )
+			, clicks    = timeSeriesUtils.getTimeSeriesData( argumentCollection=commonArgs, timeField="email_template_send_log_activity.datecreated", extraFilters=[ { filter={ "message.email_template"=arguments.templateId, activity_type="click"  } } ], sourceObject="email_template_send_log_activity" )
 			, dates     = dates
 		};
 

@@ -28,26 +28,27 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 	* Override to provide a pseudo-constructor for your decorator
 	*/
 	function configure(){
+		instance.csrfProtectionService            = instance.wirebox.getInstance( dsl="csrfProtectionService" );
+		instance.delayedViewletRendererService    = instance.wirebox.getInstance( dsl="delayedViewletRendererService" );
+		instance.featureService                   = instance.wirebox.getInstance( dsl="featureService" );
+		instance.i18n                             = instance.wirebox.getInstance( dsl="i18n" );
+		instance.presideRenderer                  = instance.wirebox.getInstance( dsl="presideRenderer" );
+		instance.sessionStorage                   = instance.wirebox.getInstance( dsl="sessionStorage" );
+		instance.tenancyService                   = instance.wirebox.getInstance( dsl="tenancyService" );
 
-		instance.adminObjectLinkBuilderService    = instance.wirebox.getInstance( "adminObjectLinkBuilderService" );
-		instance.auditService                     = instance.wirebox.getInstance( "auditService" );
-		instance.csrfProtectionService            = instance.wirebox.getInstance( "csrfProtectionService" );
-		instance.delayedStickerRendererService    = instance.wirebox.getInstance( "delayedStickerRendererService" );
-		instance.delayedViewletRendererService    = instance.wirebox.getInstance( "delayedViewletRendererService" );
-		instance.featureService                   = instance.wirebox.getInstance( "featureService" );
-		instance.formsService                     = instance.wirebox.getInstance( "formsService" );
-		instance.i18n                             = instance.wirebox.getInstance( "i18n" );
-		instance.loginService                     = instance.wirebox.getInstance( "loginService" );
-		instance.multilingualPresideObjectService = instance.wirebox.getInstance( "multilingualPresideObjectService" );
-		instance.presideRenderer                  = instance.wirebox.getInstance( "presideRenderer" );
-		instance.rulesEngineWebRequestService     = instance.wirebox.getInstance( "rulesEngineWebRequestService" );
-		instance.sessionStorage                   = instance.wirebox.getInstance( "sessionStorage" );
-		instance.siteService                      = instance.wirebox.getInstance( "siteService" );
-		instance.sitetreeService                  = instance.wirebox.getInstance( "sitetreeService" );
-		instance.stickerForPreside                = instance.wirebox.getInstance( "stickerForPreside" );
-		instance.tenancyService                   = instance.wirebox.getInstance( "tenancyService" );
-		instance.websiteLoginService              = instance.wirebox.getInstance( "websiteLoginService" );
-		instance.websitePermissionService         = instance.wirebox.getInstance( "websitePermissionService" );
+		instance.systemConfigurationService       = instance.wirebox.getInstance( dsl="featureInjector:admin:systemConfigurationService" );
+		instance.stickerForPreside                = instance.wirebox.getInstance( dsl="featureInjector:sticker:stickerForPreside" );
+		instance.adminObjectLinkBuilderService    = instance.wirebox.getInstance( dsl="featureInjector:admin:adminObjectLinkBuilderService" );
+		instance.auditService                     = instance.wirebox.getInstance( dsl="featureInjector:auditTrail:auditService" );
+		instance.delayedStickerRendererService    = instance.wirebox.getInstance( dsl="featureInjector:delayedViewlets:delayedStickerRendererService" );
+		instance.formsService                     = instance.wirebox.getInstance( dsl="featureInjector:presideForms:formsService" );
+		instance.loginService                     = instance.wirebox.getInstance( dsl="featureInjector:admin:loginService" );
+		instance.multilingualPresideObjectService = instance.wirebox.getInstance( dsl="featureInjector:multilingual:multilingualPresideObjectService" );
+		instance.rulesEngineWebRequestService     = instance.wirebox.getInstance( dsl="featureInjector:rulesEngine:rulesEngineWebRequestService" );
+		instance.siteService                      = instance.wirebox.getInstance( dsl="featureInjector:sites:siteService" );
+		instance.sitetreeService                  = instance.wirebox.getInstance( dsl="featureInjector:siteTree:sitetreeService" );
+		instance.websiteLoginService              = instance.wirebox.getInstance( dsl="featureInjector:websiteUsers:websiteLoginService" );
+		instance.websitePermissionService         = instance.wirebox.getInstance( dsl="featureInjector:websiteUsers:websitePermissionService" );
 	}
 
 	/**
@@ -60,16 +61,20 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 // URL related
 	public void function setSite( required struct site ) {
-		getModel( "tenancyService" ).setTenantId( tenant="site", id=( site.id ?: "" ) );
-		getRequestContext().setValue(
-			  name    = "_site"
-			, value   =  arguments.site
-			, private =  true
-		);
+		if ( this.getModel( "featureService" ).isFeatureEnabled( "sites" ) ) {
+			getModel( "tenancyService" ).setTenantId( tenant="site", id=( site.id ?: "" ) );
+			getRequestContext().setValue(
+				  name    = "_site"
+				, value   =  arguments.site
+				, private =  true
+			);
+		}
 	}
 
 	public void function autoSetSiteByHost() {
-		setSite( getModel( "siteService" ).matchSite( this.getServerName(), this.getCurrentPresideUrlPath() ) );
+		if ( this.getModel( "featureService" ).isFeatureEnabled( "sites" ) ) {
+			setSite( getModel( "siteService" ).matchSite( this.getServerName(), this.getCurrentPresideUrlPath() ) );
+		}
 	}
 
 	public struct function getSite() {
@@ -114,9 +119,20 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		}
 
 		if ( arguments.includeLanguageSlug ) {
-			var languageSlug = this.getLanguageSlug();
-			if ( Len( Trim( languageSlug ) ) ) {
-				siteUrl = ReReplace( siteUrl, "/$", "" ) & "/" & languageSlug;
+			if ( this.getModel( "featureService" ).isFeatureEnabled( "multilingual" ) ) {
+				var multilingualSettings = getModel( "systemConfigurationService" ).getCategorySettings(
+					  category = "multilingual"
+					, tenantId = arguments.siteId
+				);
+
+				arguments.includeLanguageSlug = multilingualSettings.urls_enabled ?: false;
+			}
+
+			if ( IsBoolean( arguments.includeLanguageSlug ) && arguments.includeLanguageSlug ) {
+				var languageSlug = this.getLanguageSlug();
+				if ( Len( Trim( languageSlug ) ) ) {
+					siteUrl = ReReplace( siteUrl, "/$", "" ) & "/" & languageSlug;
+				}
 			}
 		}
 
@@ -241,6 +257,22 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		getRequestContext().removeValue( name="_overwriteDomainForBuildLink", private=true );
 	}
 
+	public void function setCanonicalUrl( required string canonicalUrl ) {
+		getRequestContext().setValue(
+			  name    = "_canonicalUrl"
+			, value   = arguments.canonicalUrl
+			, private = true
+		);
+	}
+
+	public string function getCanonicalUrl() {
+		return getRequestContext().getValue(
+			  name         = "_canonicalUrl"
+			, private      = true
+			, defaultValue = ""
+		);
+	}
+
 // REQUEST DATA
 	public struct function getCollectionWithoutSystemVars() {
 		var collection = Duplicate( getRequestContext().getCollection() );
@@ -273,6 +305,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		for( var name in formNames ) {
 			var formFields     = formsService.listFields( argumentCollection=arguments, formName=name );
 			var autoTrimFields = formsService.listAutoTrimFields( argumentCollection=arguments, formName=name );
+			var textFields     = formsService.listTextFields( argumentCollection=arguments, formName=name );
 
 			for( var field in formFields ){
 				var fieldName = arguments.fieldNamePrefix & field & arguments.fieldNameSuffix;
@@ -280,6 +313,9 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 					collection[ field ] = trim( rc[ fieldName ] ?: "" );
 				} else {
 					collection[ field ] = ( rc[ fieldName ] ?: "" );
+				}
+				if ( ArrayFind( textFields, field ) ) {
+					collection[ field ] = Replace( collection[ fieldName ], Chr(13) & Chr(10), Chr(10), "all" );
 				}
 			}
 		}
@@ -526,7 +562,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 		announceInterception( "onAdminLoginSuccess" );
 
-		if ( getModel( "loginService" ).twoFactorAuthenticationRequired( ipAddress = getClientIp(), userAgent = getUserAgent() ) ) {
+		if ( getModel( "loginService" ).twoFactorAuthenticationRequired() ) {
 			getController().relocate( url=buildAdminLink( linkto="login.twoStep" ), persistStruct={ postLoginUrl = postLoginUrl } );
 		}
 
@@ -565,7 +601,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 	}
 
 	public boolean function isWebUserImpersonated() {
-		return getModel( "websiteLoginService" ).isImpersonated();
+		return getModel( "featureService" ).isFeatureEnabled( "websiteUsers" ) && getModel( "websiteLoginService" ).isImpersonated();
 	}
 
 	public string function renderIncludes( string type, string group="default" ) {
@@ -664,6 +700,10 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 	public boolean function isStatelessRequest() {
 		return IsBoolean( request._sessionSettings.statelessRequest ?: "" ) && request._sessionSettings.statelessRequest;
+	}
+
+	public boolean function isPrefetchRequest() {
+		return getHTTPHeader( "sec-purpose" ) == "prefetch";
 	}
 
 	public void function setXFrameOptionsHeader( string value ) {
@@ -799,7 +839,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 	}
 
 	public void function checkPageAccess() {
-		if ( !getCurrentPageId().len() ) {
+		if ( !getCurrentPageId().len() || !getModel( "featureService" ).isFeatureEnabled( "websiteUsers" ) ) {
 			return;
 		}
 
@@ -867,7 +907,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 	}
 
 	public boolean function canPageBeCached() {
-		if ( getModel( "websiteLoginService" ).isLoggedIn() || this.isAdminUser() ) {
+		if ( ( getModel( "featureService" ).isFeatureEnabled( "websiteUsers" ) && getModel( "websiteLoginService" ).isLoggedIn() ) || this.isAdminUser() ) {
 			return false;
 		}
 
@@ -992,7 +1032,9 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 	}
 	public void function setLanguage( required string language ) {
 		getRequestContext().setValue( name="_language", value=arguments.language, private=true );
-		getModel( "multilingualPresideObjectService" ).persistUserLanguage( arguments.language );
+		if ( getModel( "featureService" ).isFeatureEnabled( "multilingual" ) ) {
+			getModel( "multilingualPresideObjectService" ).persistUserLanguage( arguments.language );
+		}
 	}
 
 	public string function getLanguageSlug() {
@@ -1011,10 +1053,13 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 // HTTP Header helpers
 	public string function getClientIp() {
-		var httpHeaders = getHttpRequestData( false ).headers;
-		var clientIp    = httpHeaders[ "x-real-ip" ] ?: ( httpHeader[ "x-forwarded-for"] ?: cgi.remote_addr );
+		var prc = getRequestContext().getCollection( private=true );
 
-		return Trim( ListFirst( clientIp ) );
+		if ( !StructKeyExists( prc, "__clientIp" ) ) {
+			prc.__clientIp = _readClientIpFromHeaders();
+		}
+
+		return prc.__clientIp;
 	}
 
 	public string function getUserAgent() {
@@ -1049,7 +1094,9 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 			return arguments.cache;
 		}
 
-		if ( getModel( "websiteLoginService" ).isLoggedIn() && !getModel( "featureService" ).isFeatureEnabled( "fullPageCachingForLoggedInUsers" ) ) {
+		var featureService = getModel( "featureService" );
+
+		if ( featureService.isFeatureEnabled( "websiteUsers" ) && getModel( "websiteLoginService" ).isLoggedIn() && !featureService.isFeatureEnabled( "fullPageCachingForLoggedInUsers" ) ) {
 			return false;
 		}
 
@@ -1145,6 +1192,79 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		return getRequestContext().getValue( name="_isEmailRenderingContext", defaultValue=false, private=true );
 	}
 
+// OUTPUTVIEWLET HELPERS
+	public function pushViewletContext( required string view ) {
+		var prc = getRequestContext().getCollection( private=true );
+		if ( !StructKeyExists( prc, "_viewletContexts" ) ) {
+			prc._viewletContexts = [];
+		}
+
+		ArrayAppend( prc._viewletContexts, { view=arguments.view, deferredViewlet="" } );
+	}
+
+	public function popViewletContext() {
+		var prc = getRequestContext().getCollection( private=true );
+		if ( StructKeyExists( prc, "_viewletContexts" ) && ArrayLen( prc._viewletContexts ) ) {
+			ArrayDeleteAt( prc._viewletContexts, ArrayLen( prc._viewletContexts ) );
+		}
+	}
+
+	public function getViewletContext() {
+		var prc = getRequestContext().getCollection( private=true );
+
+		if ( !StructKeyExists( prc, "_viewletContexts" ) || !ArrayLen( prc._viewletContexts ) ) {
+			prc._viewletContexts = [ { view="", deferredViewlet="" } ];
+		}
+
+		return ArrayLast( prc._viewletContexts );
+	}
+
+	public function setViewletView( required string view ) {
+		var viewletCtx = getViewletContext();
+
+		viewletCtx.view = arguments.view;
+	}
+
+	public function noViewletView() {
+		setViewletView( "" );
+	}
+
+	public function deferViewlet( required string deferredViewlet ) {
+		var viewletCtx = getViewletContext();
+
+		viewletCtx.deferredViewlet = arguments.deferredViewlet;
+	}
+
+	public function setViewletArgs( required struct args ) {
+		var viewletCtx = getViewletContext();
+
+		viewletCtx.args = arguments.args;
+	}
+
+	public string function getViewletView() {
+		var viewletCtx = getViewletContext();
+
+		return viewletCtx.view ?: "";
+	}
+
+	public string function getDeferredViewlet() {
+		var viewletCtx = getViewletContext();
+
+		return viewletCtx.deferredViewlet ?: "";
+	}
+
+	public struct function getViewletArgs( required struct defaultArgs ) {
+		var viewletCtx = getViewletContext();
+
+		if ( StructKeyExists( viewletCtx, "args" ) && IsStruct( viewletCtx.args ) ) {
+			return viewletCtx.args;
+		}
+
+		return arguments.defaultArgs;
+	}
+
+
+
 // status codes
 	public void function notFound() {
 		announceInterception( "onNotFound" );
@@ -1153,8 +1273,10 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 		var contentOutput = getModel( "presideRenderer" ).renderLayout();
 
-		contentOutput = getModel( "delayedViewletRendererService" ).renderDelayedViewlets(        contentOutput );
-		contentOutput = getModel( "delayedStickerRendererService" ).renderDelayedStickerIncludes( contentOutput );
+		if ( this.getModel( "featureService" ).isFeatureEnabled( "delayedViewlets" ) ) {
+			contentOutput = getModel( "delayedViewletRendererService" ).renderDelayedViewlets(        contentOutput );
+			contentOutput = getModel( "delayedStickerRendererService" ).renderDelayedStickerIncludes( contentOutput );
+		}
 
 		writeOutput( contentOutput );
 		getController().runEvent( event="general.requestEnd", prePostExempt=true );
@@ -1167,8 +1289,10 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 		var contentOutput = getModel( "presideRenderer" ).renderLayout();
 
-		contentOutput = getModel( "delayedViewletRendererService" ).renderDelayedViewlets(        contentOutput );
-		contentOutput = getModel( "delayedStickerRendererService" ).renderDelayedStickerIncludes( contentOutput );
+		if ( this.getModel( "featureService" ).isFeatureEnabled( "delayedViewlets" ) ) {
+			contentOutput = getModel( "delayedViewletRendererService" ).renderDelayedViewlets(        contentOutput );
+			contentOutput = getModel( "delayedStickerRendererService" ).renderDelayedStickerIncludes( contentOutput );
+		}
 
 		writeOutput( contentOutput );
 		getController().runEvent( event="general.requestEnd", prePostExempt=true );
@@ -1238,5 +1362,19 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		pos = Max( pos, 1 );
 
 		return pos;
+	}
+
+	private function _readClientIpFromHeaders() {
+		var httpHeaders = getHttpRequestData( false ).headers;
+
+		if ( StructKeyExists( httpHeaders, "x-real-ip" ) && Len( httpHeaders[ "x-real-ip" ] ) ) {
+			return Trim( ListFirst( httpHeaders[ "x-real-ip" ] ) );
+		}
+
+		if ( StructKeyExists( httpHeaders, "x-forwarded-for" ) && Len( httpHeaders[ "x-forwarded-for" ] ) ) {
+			return Trim( ListFirst( httpHeaders[ "x-forwarded-for" ] ) );
+		}
+
+		return Trim( ListFirst( cgi.remote_addr ) );
 	}
 }

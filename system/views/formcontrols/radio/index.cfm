@@ -1,3 +1,4 @@
+<!---@feature presideForms--->
 <cfscript>
 	inputName      = args.name            ?: "";
 	inputId        = args.id              ?: "";
@@ -15,8 +16,6 @@
 	if ( !IsSimpleValue( value ) ) {
 		value = "";
 	}
-
-	value = HtmlEditFormat( value );
 	valueFound = false;
 
 	htmlAttributes = renderHtmlAttributes(
