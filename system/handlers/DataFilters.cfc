@@ -1,6 +1,7 @@
 component {
 
-	property name="permissionService" inject="permissionService";
+	property name="permissionService" inject="featureInjector:admin:permissionService";
+	property name="pageTypesService"  inject="featureInjector:sitetree:pageTypesService";
 
 	private struct function formbuilderV1Form( event, rc, prc, args={} ) {
 		if ( isFeatureEnabled( "formbuilder2" ) ) {
@@ -35,13 +36,21 @@ component {
 		);
 
 		return { filter = { id=groups } };
-    }
+	}
 
-    private struct function globalRulesEngineFilters( event, rc, prc, args={} ) {
-    	return {
-    		  filter = "rules_engine_condition.filter_sharing_scope is null or rules_engine_condition.filter_sharing_scope = :filter_sharing_scope"
-    		, filterParams = { filter_sharing_scope="global" }
-    	};
-    }
+	private struct function globalRulesEngineFilters( event, rc, prc, args={} ) {
+		return {
+			  filter = "rules_engine_condition.filter_sharing_scope is null or rules_engine_condition.filter_sharing_scope = :filter_sharing_scope"
+			, filterParams = { filter_sharing_scope="global" }
+		};
+	}
 
+	private struct function enabledPageTypes( event, rc, prc, args={} ) {
+		return {
+			  filter       = "page.page_type IN ( :enabledPageTypes )"
+			, filterParams = {
+				enabledPageTypes = { value=pageTypesService.listSiteTreePageTypes( includeHidden=true ), type="cf_sql_varchar", list=true }
+			  }
+		};
+	}
 }

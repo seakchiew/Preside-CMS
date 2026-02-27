@@ -171,6 +171,8 @@ component displayName="Website login service" {
 				_getUserLoginTokenDao().deleteData( filter={ series = cookieValue.series } );
 			}
 		}
+
+		$announceInterception( "postLogout" );
 	}
 
 	/**
@@ -193,7 +195,9 @@ component displayName="Website login service" {
 	 *
 	 */
 	public boolean function isAutoLoggedIn() autodoc=true {
-		return _getSessionStorage().exists( name=_getSessionKey() ) && !getLoggedInUserDetails().session_authenticated;
+		var user = getLoggedInUserDetails();
+
+		return StructCount( user ) && $helpers.isFalse( user.session_authenticated ?: "" );
 	}
 
 	/**
@@ -589,13 +593,19 @@ component displayName="Website login service" {
 	}
 
 	public void function reloadLoggedInUserDetails( string userId=getLoggedInUserId() ) {
-		var user = _getUserDao().selectData(
+		var existingSession = getLoggedInUserDetails();
+		var user            = _getUserDao().selectData(
 			  filter   = { id=arguments.userId, active=true }
 			, useCache = false
 		);
 
-		if ( user.recordCount ) {
-			_setUserSession( $helpers.queryRowToStruct( user ) );
+		for( var u in user ){
+			u.session_authenticated = $helpers.isTrue( existingSession.session_authenticated ?: "" );
+			u.impersonated          = $helpers.isTrue( existingSession.impersonated          ?: "" );
+
+			_setUserSession( u );
+
+			return;
 		}
 	}
 
@@ -670,6 +680,15 @@ component displayName="Website login service" {
 		}
 
 		if ( _getCookieService().exists( _getRememberMeCookieKey() ) ) {
+			var allowRememberMe = _getSystemConfigurationService().getSetting( "website_users", "allow_remember_me", true );
+
+			if ( $helpers.isFalse( allowRememberMe ) ) {
+				_deleteRememberMeCookie();
+
+				request._presideWebsiteAutoLoginResult = false;
+				return false;
+			}
+
 			var cookieValue = _readRememberMeCookie();
 			var user        = _getUserRecordFromCookie( cookieValue, securityAlertCallback );
 

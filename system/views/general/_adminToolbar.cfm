@@ -2,9 +2,16 @@
 <cfscript>
 	if ( event.isAdminUser() ) {
 		prc.adminToolbarDisplayMode = prc.adminToolbarDisplayMode ?: getSystemSetting( "frontend-editing", "admin_toolbar_mode", "fixed" );
+		showToolBar = !getModel( "loginService" ).twoFactorAuthenticationRequired() && prc.adminToolbarDisplayMode neq "none";
+
+		if ( showToolBar ) {
+			event.addToContentSecurityPolicy( "img-src", "//www.gravatar.com" );
+		}
+	} else {
+		showToolBar = false;
 	}
 </cfscript>
-<cfif event.isAdminUser() and !getModel( "loginService" ).twoFactorAuthenticationRequired() and prc.adminToolbarDisplayMode neq "none">
+<cfif showToolBar>
 	<cfscript>
 		prc.hasCmsPageEditPermissions = prc.hasCmsPageEditPermissions ?: hasCmsPermission( permissionKey="sitetree.edit", context="page", contextKeys=event.getPagePermissionContext() );
 		prc.adminQuickEditDisabled    = prc.adminQuickEditDisabled    ?: isTrue( getSystemSetting( "frontend-editing", "disable_quick_edit" ) );
@@ -70,11 +77,22 @@
 									</a>
 								</li>
 								<li class="no-border-left">
-									<a data-toggle="preside-dropdown" href="##" class="dropdown-toggle">
-										<i class="fa fa-eye-slash fa-lg fa-fw"></i>
-										#translateResource( 'cms:admintoolbar.show.hide' )#
-										<i class="fa fa-caret-down"></i>
-									</a>
+
+									<cfif event.showNonLiveContent()>
+										<a data-toggle="preside-dropdown" href="##" class="dropdown-toggle orange">
+											<i class="fa fa-eye-slash fa-lg fa-fw"></i>&nbsp;
+											#translateResource( uri="cms:admintoolbar.view.draft" )#
+
+											<i class="fa fa-caret-down"></i>
+										</a>
+									<cfelse>
+										<a data-toggle="preside-dropdown" href="##" class="dropdown-toggle">
+											<i class="fa fa-eye fa-lg fa-fw "></i>&nbsp;
+											#translateResource( uri="cms:admintoolbar.view.live" )#
+
+											<i class="fa fa-caret-down"></i>
+										</a>
+									</cfif>
 
 									<ul class="user-menu dropdown-menu dropdown-yellow dropdown-caret dropdown-close">
 										<li>
@@ -109,7 +127,7 @@
 								<li>
 									&nbsp;
 									<a class="pr-0 orange" href="#event.buildAdminLink( objectName="website_user", operation="viewRecord", recordId=getLoggedinUserId() )#">
-										<i class="fa fa-fw fa-lg fa-mask orange"></i>
+										<i class="fa fa-fw fa-lg fa-mask"></i>&nbsp;
 										#translateResource( uri="cms:admintoolbar.impersonating.web.user", data=[ getLoggedInUserDetails().email_address ] )#
 									</a>
 									<a class="p-0" href="#event.buildLink( linkto="login.logout" )#">
@@ -127,7 +145,7 @@
 			</div>
 		</div>
 
-		<script>
+		<script nonce="#event.getRequestNonce()#">
 			( function(){
 				var htmlElement    = document.querySelector( "html" )
 				  , bodyElement    = document.querySelector( "body" )

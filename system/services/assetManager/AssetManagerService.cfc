@@ -668,7 +668,7 @@ component displayName="AssetManager Service" {
 	 *
 	 */
 	public string function addAsset(
-		           binary  fileBinary
+				   binary  fileBinary
 		,          string  filePath          = ""
 		, required string  fileName
 		, required string  folder
@@ -1433,6 +1433,32 @@ component displayName="AssetManager Service" {
 		return generatedUrl;
 	}
 
+	public string function getTempPrivateUrl(
+		  required string  id
+		,          string  versionId        = ""
+		,          numeric timeoutInMinutes = 1
+	) {
+		var asset  = "";
+
+		if ( Len( Trim( arguments.versionId ) ) ) {
+			asset = getAssetVersion( assetId=arguments.id, versionId=arguments.versionId, selectFields=[ "asset_version.storage_path", "asset.asset_folder" ] );
+		} else {
+			asset = getAsset( id=arguments.id, selectFields=[ "storage_path", "asset_folder", "active_version" ] );
+		}
+
+		if ( asset.recordCount ) {
+			var storageProvider = getStorageProviderForFolder( asset.asset_folder );
+			if ( StructKeyExists( storageProvider, "getTemporaryPrivateObjectUrl" ) ) {
+				return storageProvider.getTemporaryPrivateObjectUrl(
+					  path             = asset.storage_path
+					, timeoutInMinutes = arguments.timeoutInMinutes
+				);
+			}
+		}
+
+		return "";
+	}
+
 	public string function getDerivativeUrl(
 		  required string assetId
 		, required string derivativeName
@@ -1944,8 +1970,8 @@ component displayName="AssetManager Service" {
 		for( var derivative in derivatives ) {
 			if ( StructKeyExists( derivatives[ derivative ], "inEditor" ) ) {
 				if( IsBoolean( derivatives[ derivative ].inEditor ?: "" ) && derivatives[ derivative ].inEditor ){
-				    publicDerivatives.append( derivative );
-			   	}
+					publicDerivatives.append( derivative );
+				   }
 			}
 		}
 
@@ -2471,6 +2497,8 @@ component displayName="AssetManager Service" {
 			, "resize_no_crop"
 			, "created_by"
 			, "updated_by"
+			, "datecreated"
+			, "datemodified"
 		] );
 
 		if ( !Len( Trim( asset.active_version ) ) ) {
@@ -2488,6 +2516,8 @@ component displayName="AssetManager Service" {
 				, resize_no_crop   = asset.resize_no_crop
 				, created_by       = asset.created_by
 				, updated_by       = asset.updated_by
+				, datecreated      = asset.datecreated
+				, datemodified     = asset.datemodified
 			} );
 
 			_getAssetDao().updateData( id=arguments.assetId, data={ active_version=versionId } );
@@ -2754,28 +2784,28 @@ component displayName="AssetManager Service" {
 	}
 
 	private any function _getRenderedAssetCache() {
-	    return _renderedAssetCache;
+		return _renderedAssetCache;
 	}
 	private void function _setRenderedAssetCache( required any renderedAssetCache ) {
-	    _renderedAssetCache = arguments.renderedAssetCache;
+		_renderedAssetCache = arguments.renderedAssetCache;
 	}
 
 	private any function _getAssetQueueService() {
-	    return _assetQueueService;
+		return _assetQueueService;
 	}
 	private void function _setAssetQueueService( required any assetQueueService ) {
-	    _assetQueueService = arguments.assetQueueService;
+		_assetQueueService = arguments.assetQueueService;
 	}
 
 	private any function _getDerivativeGeneratorService() {
-	    return _derivativeGeneratorService;
+		return _derivativeGeneratorService;
 	}
 	private void function _setDerivativeGeneratorService( required any derivativeGeneratorService ) {
-	    _derivativeGeneratorService = arguments.derivativeGeneratorService;
+		_derivativeGeneratorService = arguments.derivativeGeneratorService;
 	}
 
 	private struct function _getDerivativeLimits() {
-	    return _derivativeLimits;
+		return _derivativeLimits;
 	}
 	private void function _setDerivativeLimits( required struct derivativeLimits ) {
 		_derivativeLimits = {
@@ -2787,17 +2817,17 @@ component displayName="AssetManager Service" {
 	}
 
 	private struct function _getConfiguredFolders() {
-	    return _configuredFolders;
+		return _configuredFolders;
 	}
 	private void function _setConfiguredFolders( required struct configuredFolders ) {
-	    _configuredFolders = arguments.configuredFolders;
+		_configuredFolders = arguments.configuredFolders;
 	}
 
 	private struct function _getConfiguredTypesByGroup() {
-	    return _configuredTypesByGroup;
+		return _configuredTypesByGroup;
 	}
 	private void function _setConfiguredTypesByGroup( required struct configuredTypesByGroup ) {
-	    _configuredTypesByGroup = arguments.configuredTypesByGroup;
+		_configuredTypesByGroup = arguments.configuredTypesByGroup;
 	}
 
 }

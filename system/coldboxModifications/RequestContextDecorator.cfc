@@ -88,15 +88,16 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 	}
 
 	public string function getSiteUrl( string siteId="", boolean includePath=true, boolean includeLanguageSlug=true, boolean includeProtocol=true ) {
-		var prc       = getRequestContext().getCollection( private=true );
-		var fetchSite = ( prc._forceDomainLookup ?: false ) || ( Len( Trim( arguments.siteId ) ) && arguments.siteId != getSiteId() );
-		var site      = fetchSite ? getModel( "siteService" ).getSite( arguments.siteId ) : getSite();
-		var protocol  = ( site.protocol ?: getProtocol() );
-		var domain    = "";
+		var prc           = getRequestContext().getCollection( private=true );
+		var fetchSite     = ( prc._forceDomainLookup ?: false ) || ( Len( Trim( arguments.siteId ) ) && arguments.siteId != getSiteId() );
+		var useSiteDomain = ( prc._forceDomainLookup ?: false ) || Len( Trim( arguments.siteId ) );
+		var site          = fetchSite ? getModel( "siteService" ).getSite( arguments.siteId ) : getSite();
+		var protocol      = ( site.protocol ?: getProtocol() );
+		var domain        = "";
 
 		if ( overwriteDomainForBuildLink() ) {
 			domain = getOverwriteDomainForBuildLink();
-		} else if ( fetchSite && StructKeyExists( site, "domain" ) && site.domain != "*" ) {
+		} else if ( useSiteDomain && StructKeyExists( site, "domain" ) && site.domain != "*" ) {
 			domain = site.domain;
 		} else {
 			domain = cgi.server_name;
@@ -110,9 +111,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 		prc.delete( "_forceDomainLookup" );
 
-		if ( !listFindNoCase( "80,443", cgi.SERVER_PORT ) ) {
-			siteUrl &= ":#cgi.SERVER_PORT#";
-		}
+		siteUrl &= getPortSuffix();
 
 		if ( arguments.includePath ) {
 			siteUrl &= site.path ?: "/";
@@ -139,6 +138,20 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		siteUrl = siteUrl.reReplace( "/$", "" );
 
 		return siteUrl;
+	}
+
+	public string function getPortSuffix() {
+		var port = getController().getSetting( "forceport" );
+
+		if ( !Len( port ) ) {
+			port = cgi.SERVER_PORT;
+		}
+
+		if ( Len( port ) && port != "443" && port != "80" ) {
+			return ":#port#";
+		}
+
+		return "";
 	}
 
 	public string function getSystemPageId( required string systemPage ) {
@@ -185,10 +198,18 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		return link;
 	}
 
-	public string function getProtocol() {
+	public string function getProtocol( boolean fromSite=false ) {
+		if ( arguments.fromSite ) {
+			var site = getSite();
+			if ( StructKeyExists( site, "protocol" ) && Len( site.protocol ) ) {
+				return site.protocol;
+			}
+		}
+
 		if ( getController().getSetting( "forcessl" ) ) {
 			return "https";
 		}
+
 		return ( cgi.https ?: "" ) == "on" ? "https" : "http";
 	}
 
@@ -204,7 +225,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		}
 
 		var protocol = getProtocol() & "://";
-		var port     = !listFindNoCase( "80,443", cgi.SERVER_PORT ) ? ( ":" & cgi.SERVER_PORT ) : "";
+		var port     = getPortSuffix();
 
 		if ( overwriteDomainForBuildLink() ) {
 			return protocol & getOverwriteDomainForBuildLink() & port;
@@ -605,7 +626,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 	}
 
 	public string function renderIncludes( string type, string group="default" ) {
-		var rendered      = getModel( "StickerForPreside" ).renderIncludes( argumentCollection = arguments );
+		var rendered = getModel( "StickerForPreside" ).renderIncludes( argumentCollection = arguments, nonce=getRequestNonce() );
 
 		if ( !StructKeyExists( arguments, "type" ) || arguments.type == "js" ) {
 			var inlineJs = getRequestContext().getValue( name="__presideInlineJs", defaultValue={}, private=true );
@@ -632,7 +653,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		var inlineJs = getRequestContext().getValue( name="__presideInlineJs", defaultValue={}, private=true );
 
 		inlineJs[ arguments.group ] = inlineJs[ arguments.group ] ?: [];
-		inlineJs[ arguments.group ].append( "<script type=""text/javascript"">" & Chr(10) & arguments.js & Chr(10) & "</script>" );
+		inlineJs[ arguments.group ].append( "<script type=""text/javascript"" nonce=""#getRequestNonce()#"">" & Chr(10) & arguments.js & Chr(10) & "</script>" );
 
 		getRequestContext().setValue( name="__presideInlineJs", value=inlineJs, private=true );
 	}
@@ -720,6 +741,45 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 		}
 
 		getRequestContext().setValue( name="xframeoptions", value=UCase( arguments.value ), private=true );
+	}
+
+	public void function setContentSecurityPolicy( required string policy ) {
+		getRequestContext().setValue( name="contentSecurityPolicy", value=arguments.policy, private=true );
+	}
+
+	public string function getContentSecurityPolicy() {
+		return getRequestContext().getValue( name="contentSecurityPolicy", defaultValue="", private=true );
+	}
+
+	public void function addToContentSecurityPolicy( required string directive, required string value ) {
+		var sources = getRequestContext().getValue( name="additionalCspSources", defaultValue={}, private=true );
+
+		if ( !StructKeyExists( sources, arguments.directive ) ) {
+			sources[ arguments.directive ] = [];
+		}
+
+		if ( ReFind( "^//", arguments.value ) ) {
+			arguments.value = "#getProtocol( fromSite=true )#:#arguments.value#";
+		}
+
+		ArrayAppend( sources[ arguments.directive ], arguments.value );
+
+		getRequestContext().setValue( name="additionalCspSources", value=sources, private=true );
+	}
+
+	public struct function getAdditionalCspSources() {
+		return getRequestContext().getValue( name="additionalCspSources", defaultValue={}, private=true );
+	}
+
+	public string function getRequestNonce() {
+		var nonce = getRequestContext().getValue( name="_requestNonce", defaultValue="", private=true );
+
+		if ( !Len( Trim( nonce ) ) ) {
+			nonce = LCase( Hash( CreateUUID() ) );
+			getRequestContext().setValue( name="_requestNonce", value=nonce, private=true );
+		}
+
+		return nonce;
 	}
 
 // FRONT END, dealing with current page
@@ -1068,7 +1128,7 @@ component accessors=true extends="preside.system.coldboxModifications.RequestCon
 
 	function setHTTPHeader( string statusCode, string statusText="", string name, string value="", boolean overwrite=false ){
 		if ( StructKeyExists( arguments, "statusCode" ) ) {
-			getPageContext().getResponse().setStatus( javaCast( "int", arguments.statusCode ), javaCast( "string", arguments.statusText ) );
+			getPageContext().getResponse().setStatus( javaCast( "int", arguments.statusCode ) );
 		} else if ( StructKeyExists( arguments, "name" ) ) {
 			if ( arguments.overwrite ) {
 				getPageContext().getResponse().setHeader( javaCast( "string", arguments.name ), javaCast( "string", arguments.value ) );
