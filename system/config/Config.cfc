@@ -98,7 +98,7 @@ component {
 
 	private void function __setupEnvironments() {
 		variables.environments = {
-			local = "^local\.,\.local(:[0-9]+)?$,^localhost(:[0-9]+)?$,^127.0.0.1(:[0-9]+)?$"
+			local = "^local\.,\.local(:[0-9]+)?$,^(.+\.)?localhost(:[0-9]+)?$,^127\.0\.0\.1(:[0-9]+)?$"
 		};
 
 		settings.environmentMessage      = "";
@@ -331,6 +331,8 @@ component {
 		interceptorSettings.customInterceptionPoints.append( "postRenderRecordForViewRecord" );
 		interceptorSettings.customInterceptionPoints.append( "prePrepareEmailHtmlContent" );
 		interceptorSettings.customInterceptionPoints.append( "postGetEmailLayoutConfig" );
+		interceptorSettings.customInterceptionPoints.append( "onClearAssetDerivatives" );
+		interceptorSettings.customInterceptionPoints.append( "onClearFolderDerivatives" );
 	}
 
 	private void function __setupCachebox() {
