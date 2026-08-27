@@ -1581,6 +1581,8 @@ component extends="preside.system.base.AdminHandler" {
 					StructAppend( rc, DeSerializeJson( savedExportDetail.template_config ) );
 				}
 
+				_checkPermission( argumentCollection=arguments, key="read", object=rc.object, checkOperations=false );
+
 				runEvent(
 					  event          = "admin.DataManager._exportDataAction"
 					, prePostExempt  = true
@@ -3503,6 +3505,16 @@ component extends="preside.system.base.AdminHandler" {
 		return renderView( view="/admin/datamanager/_batchEditForm", args=args );
 	}
 
+	private string function _stripFilterQueryStringParam( required string url ) {
+		var baseUrl     = ListFirst( arguments.url, "?" );
+		var queryString = ListRest(  arguments.url, "?" );
+		var queryParams = ArrayFilter( ListToArray( queryString, "&" ), function( param ) {
+			return !ReFindNoCase( "^filter=", arguments.param );
+		} );
+
+		return baseUrl & ( ArrayLen( queryParams ) ? "?" & ArrayToList( queryParams, "&" ) : "" );
+	}
+
 	private void function _exportDataAction(
 		  required any    event
 		, required struct rc
@@ -3517,7 +3529,7 @@ component extends="preside.system.base.AdminHandler" {
 		,          string savedFilters       = ( rc.savedFilters       ?: '' )
 		,          string orderBy            = ( rc.orderBy            ?: '' )
 		,          array  extraFilters       = []
-		,          string returnUrl          = cgi.http_referer
+		,          string returnUrl          = _stripFilterQueryStringParam( cgi.http_referer ?: "" )
 		,          struct additionalArgs     = {}
 
 	) {
@@ -4333,7 +4345,7 @@ component extends="preside.system.base.AdminHandler" {
 		return rootForm;
 	}
 
-	private void function _loadCommonVariables( event, action, eventArguments, includeAllFormulaFields=( arguments.action == "viewRecord" ) ) {
+	private void function _loadCommonVariables( event, action, eventArguments, includeAllFormulaFields=( arguments.action == "viewRecord" ), extraSelectFields=[] ) {
 		var rc  = event.getCollection();
 		var prc = event.getCollection( private=true );
 
@@ -4454,15 +4466,25 @@ component extends="preside.system.base.AdminHandler" {
 				}
 
 				if ( !prc.isTranslationAction ) {
+					var selectDataArgs = {
+						  objectName              = prc.objectName
+						, id                      = prc.recordId
+						, useCache                = false
+						, includeAllFormulaFields = arguments.includeAllFormulaFields
+						, extraSelectFields       = arguments.extraSelectFields
+						, allowDraftVersions      = true
+						, autoGroupBy             = arguments.includeAllFormulaFields || ArrayLen( arguments.extraSelectFields )
+					};
+
 					if ( prc.useVersioning && prc.version ) {
 						if ( !presideObjectService.dataExists( objectName=prc.objectName, id=prc.recordId, useCache=false ) ) {
 							messageBox.error( translateResource( uri="cms:datamanager.recordNotFound.error", data=[ prc.objectTitle  ] ) );
 							setNextEvent( url=event.buildAdminLink( objectName=prc.objectName, operation="listing" ) );
 						}
 
-						prc.record = presideObjectService.selectData( objectName=prc.objectName, id=prc.recordId, useCache=false, includeAllFormulaFields=arguments.includeAllFormulaFields, fromVersionTable=true, specificVersion=prc.version, allowDraftVersions=true, autoGroupBy=arguments.includeAllFormulaFields );
+						prc.record = presideObjectService.selectData( argumentCollection=selectDataArgs, fromVersionTable=true, specificVersion=prc.version );
 					} else {
-						prc.record = presideObjectService.selectData( objectName=prc.objectName, id=prc.recordId, useCache=false, includeAllFormulaFields=arguments.includeAllFormulaFields, allowDraftVersions=true, autoGroupBy=arguments.includeAllFormulaFields );
+						prc.record = presideObjectService.selectData( argumentCollection=selectDataArgs );
 					}
 
 					if ( !prc.record.recordCount ) {
